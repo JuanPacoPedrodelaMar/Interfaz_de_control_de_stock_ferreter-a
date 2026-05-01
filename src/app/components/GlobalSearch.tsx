@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 
@@ -67,6 +68,9 @@ export function GlobalSearch() {
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Buscar Productos</DialogTitle>
+            <DialogDescription>
+              Busca productos por nombre, categoría o sucursal
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="relative">
