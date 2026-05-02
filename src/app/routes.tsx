@@ -4,16 +4,17 @@ import { Inventory } from "./pages/Inventory";
 import { Movements } from "./pages/Movements";
 import { Restock } from "./pages/Restock";
 import { Layout } from "./components/Layout";
+import React from "react";
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: Layout,
+    element: <Layout />,
     children: [
-      { index: true, Component: Dashboard },
-      { path: "inventory", Component: Inventory },
-      { path: "movements", Component: Movements },
-      { path: "restock", Component: Restock },
+      { index: true, element: <Dashboard /> },
+      { path: "inventory", element: <Inventory /> },
+      { path: "movements", element: <Movements /> },
+      { path: "restock", element: <Restock /> },
     ],
   },
 ]);

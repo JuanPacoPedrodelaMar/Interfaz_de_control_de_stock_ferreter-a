@@ -46,49 +46,57 @@ export function Dashboard() {
 
       {/* Tarjetas de resumen */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Productos</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold">{products.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Productos registrados</p>
-          </CardContent>
-        </Card>
+        <Link to="/inventory">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Productos</CardTitle>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold">{products.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Productos registrados</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-red-600">{lowStockProducts.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Requieren reposición</p>
-          </CardContent>
-        </Card>
+        <Link to="/restock">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-red-600">{lowStockProducts.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Requieren reposición</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Entradas Hoy</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-blue-600">{todayEntries}</div>
-            <p className="text-xs text-muted-foreground mt-1">Movimientos de entrada</p>
-          </CardContent>
-        </Card>
+        <Link to="/movements?filter=entry">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Entradas Hoy</CardTitle>
+              <TrendingUp className="h-4 w-4 text-blue-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-blue-600">{todayEntries}</div>
+              <p className="text-xs text-muted-foreground mt-1">Movimientos de entrada</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Salidas Hoy</CardTitle>
-            <TrendingDown className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold text-green-600">{todayExits}</div>
-            <p className="text-xs text-muted-foreground mt-1">Movimientos de salida</p>
-          </CardContent>
-        </Card>
+        <Link to="/movements?filter=exit">
+          <Card className="hover:bg-accent transition-colors cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Salidas Hoy</CardTitle>
+              <TrendingDown className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold text-green-600">{todayExits}</div>
+              <p className="text-xs text-muted-foreground mt-1">Movimientos de salida</p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Valor total del inventario */}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Product, Movement, MOVEMENT_REASONS } from "../types";
 import { storage } from "../utils/storage";
 import { Button } from "../components/ui/button";
@@ -21,15 +22,18 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Plus, TrendingUp, TrendingDown, Calendar, AlertCircle } from "lucide-react";
+import { Plus, TrendingUp, TrendingDown, Calendar, AlertCircle, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "../components/ui/badge";
 import { Alert, AlertDescription } from "../components/ui/alert";
 
 export function Movements() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const filterType = searchParams.get("filter") as "entry" | "exit" | null;
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -183,10 +187,18 @@ export function Movements() {
     setIsDialogOpen(false);
   };
 
-  // Ordenar movimientos por fecha (más recientes primero)
-  const sortedMovements = [...movements].sort(
+  // Filtrar y ordenar movimientos
+  const filteredMovements = filterType
+    ? movements.filter((m) => m.type === filterType)
+    : movements;
+
+  const sortedMovements = [...filteredMovements].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
+
+  const clearFilter = () => {
+    setSearchParams({});
+  };
 
   // Obtener los motivos disponibles según el tipo seleccionado
   const availableReasons = formData.type 
@@ -197,9 +209,42 @@ export function Movements() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-semibold text-foreground">Movimientos de Stock</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-3xl font-semibold text-foreground">Movimientos de Stock</h2>
+            {filterType && (
+              <Badge
+                variant="secondary"
+                className={`flex items-center gap-1 ${
+                  filterType === "entry"
+                    ? "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-400"
+                    : "bg-green-100 dark:bg-green-950/50 text-green-800 dark:text-green-400"
+                }`}
+              >
+                {filterType === "entry" ? (
+                  <>
+                    <TrendingUp className="h-3 w-3" />
+                    Solo Entradas
+                  </>
+                ) : (
+                  <>
+                    <TrendingDown className="h-3 w-3" />
+                    Solo Salidas
+                  </>
+                )}
+                <button
+                  onClick={clearFilter}
+                  className="ml-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5"
+                  aria-label="Quitar filtro"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground mt-1">
-            Registra entradas y salidas de productos ({movements.length} movimientos registrados)
+            {filterType
+              ? `Mostrando ${sortedMovements.length} de ${movements.length} movimientos`
+              : `Registra entradas y salidas de productos (${movements.length} movimientos registrados)`}
           </p>
         </div>
         <Button onClick={handleOpenDialog} disabled={products.length === 0}>
