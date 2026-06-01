@@ -48,12 +48,14 @@ Sistema de gestión de inventario para ferreterías con gestión de stock, movim
 - Búsqueda y filtros avanzados
 - Edición y eliminación de productos
 - Alertas de stock bajo
+- **Deshacer acciones**: crear, editar o eliminar productos puede revertirse con un toast temporal o Ctrl+Z
 
 ### 📈 Movimientos
 - Registro de entradas y salidas
 - Historial de movimientos
 - Validación de stock disponible
 - Motivos predefinidos
+- **Deshacer movimientos**: cada registro puede revertirse en los segundos siguientes mediante el toast de deshacer
 
 ### ⚠️ A Reponer
 - Listado de productos con stock bajo
@@ -78,16 +80,16 @@ pnpm build
 
 El sistema implementa las 10 heurísticas de usabilidad de Nielsen:
 
-1. **Visibilidad del estado del sistema** - Notificaciones toast para todas las acciones
-2. **Coincidencia entre el sistema y el mundo real** - Terminología clara en español
-3. **Control y libertad del usuario** - Confirmaciones antes de acciones destructivas
-4. **Consistencia y estándares** - Componentes UI uniformes
-5. **Prevención de errores** - Validación de formularios en tiempo real
-6. **Reconocimiento antes que recuerdo** - Información contextual visible
-7. **Flexibilidad y eficiencia** - Búsqueda global con atajo de teclado (⌘K)
-8. **Diseño estético y minimalista** - Interfaz limpia y enfocada
-9. **Ayuda para reconocer y recuperarse de errores** - Mensajes de error claros
-10. **Ayuda y documentación** - Tooltips y placeholders descriptivos
+1. **Visibilidad del estado del sistema** — Notificaciones toast para todas las acciones; barra de progreso en el toast de deshacer para mostrar el tiempo restante
+2. **Coincidencia entre el sistema y el mundo real** — Terminología clara en español
+3. **Control y libertad del usuario** — Confirmaciones antes de acciones destructivas + **toast de deshacer** (Ctrl+Z) para revertir cualquier mutación en Inventario y Movimientos
+4. **Consistencia y estándares** — Componentes UI uniformes
+5. **Prevención de errores** — Validación de formularios en tiempo real
+6. **Reconocimiento antes que recuerdo** — Información contextual visible
+7. **Flexibilidad y eficiencia** — Búsqueda global con atajo ⌘K; atajo **Ctrl+Z / ⌘Z** para deshacer sin usar el mouse
+8. **Diseño estético y minimalista** — Interfaz limpia y enfocada; toast de deshacer no intrusivo en esquina inferior izquierda
+9. **Ayuda para reconocer y recuperarse de errores** — Mensajes de error claros; el diálogo de eliminación informa que la acción puede deshacerse
+10. **Ayuda y documentación** — Tooltips y placeholders descriptivos
 
 ## Modo Oscuro
 

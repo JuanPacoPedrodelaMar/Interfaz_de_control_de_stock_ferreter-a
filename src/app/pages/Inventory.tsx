@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { Product, CATEGORIES, BRANCHES } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
+import { useUndoAction } from "../hooks/useUndoAction";
+import { UndoToast } from "../components/UndoToast";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -48,6 +50,8 @@ export function Inventory() {
   const { currentUser } = useAuth();
   const isEmployee = currentUser?.role === "employee";
   const userBranch = currentUser?.branch;
+
+  const { undoConfig, showUndo, dismiss, executeUndo } = useUndoAction();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -270,6 +274,7 @@ export function Inventory() {
       return;
     }
 
+    const prevProducts = [...products];
     let updatedProducts: Product[];
 
     if (editingProduct) {
@@ -287,6 +292,15 @@ export function Inventory() {
           : p
       );
       toast.success(`"${formData.name}" actualizado correctamente`);
+      const productName = formData.name.trim();
+      showUndo({
+        message: `"${productName}" actualizado`,
+        onUndo: () => {
+          storage.saveProducts(prevProducts);
+          setProducts(prevProducts);
+          toast.info("Edición deshecha");
+        },
+      });
     } else {
       const newProduct: Product = {
         id: Date.now().toString(),
@@ -300,6 +314,15 @@ export function Inventory() {
       };
       updatedProducts = [...products, newProduct];
       toast.success(`"${formData.name}" agregado al inventario de ${formData.branch}`);
+      const productName = formData.name.trim();
+      showUndo({
+        message: `"${productName}" creado en ${formData.branch}`,
+        onUndo: () => {
+          storage.saveProducts(prevProducts);
+          setProducts(prevProducts);
+          toast.info("Creación deshecha");
+        },
+      });
     }
 
     storage.saveProducts(updatedProducts);
@@ -309,11 +332,22 @@ export function Inventory() {
 
   const confirmDelete = () => {
     if (!productToDelete) return;
+    const prevProducts = [...products];
+    const deletedName = productToDelete.name;
+    const deletedBranch = productToDelete.branch;
     const updatedProducts = products.filter((p) => p.id !== productToDelete.id);
     storage.saveProducts(updatedProducts);
     setProducts(updatedProducts);
-    toast.success(`"${productToDelete.name}" eliminado del inventario`);
+    toast.success(`"${deletedName}" eliminado del inventario`);
     setProductToDelete(null);
+    showUndo({
+      message: `"${deletedName}" eliminado de ${deletedBranch}`,
+      onUndo: () => {
+        storage.saveProducts(prevProducts);
+        setProducts(prevProducts);
+        toast.info("Eliminación deshecha");
+      },
+    });
   };
 
   // Agrupar productos por nombre para mostrar cuántas sucursales tiene
@@ -732,7 +766,7 @@ export function Inventory() {
             <AlertDialogTitle>¿Eliminar este producto?</AlertDialogTitle>
             <AlertDialogDescription>
               Estás a punto de eliminar "{productToDelete?.name}" de {productToDelete?.branch}.
-              Esta acción no se puede deshacer.
+              Tendrás unos segundos para deshacer la acción después de confirmar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -746,6 +780,15 @@ export function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Toast de deshacer — H3: Control y libertad del usuario */}
+      {undoConfig && (
+        <UndoToast
+          message={undoConfig.message}
+          onUndo={executeUndo}
+          onDismiss={dismiss}
+        />
+      )}
     </div>
   );
 }
+

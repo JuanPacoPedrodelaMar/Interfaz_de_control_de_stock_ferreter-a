@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router";
 import { Product, Movement, MOVEMENT_REASONS, Discount, BRANCHES, Customer } from "../types";
 import { storage, FREQUENT_CUSTOMER_THRESHOLD } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
+import { useUndoAction } from "../hooks/useUndoAction";
+import { UndoToast } from "../components/UndoToast";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -57,6 +59,8 @@ export function Movements() {
 
   const isEmployee = currentUser?.role === "employee";
   const userBranch = currentUser?.branch;
+
+  const { undoConfig, showUndo, dismiss, executeUndo } = useUndoAction();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -266,6 +270,10 @@ export function Movements() {
 
     const quantity = parseInt(formData.quantity);
 
+    // Capturamos el estado anterior para poder deshacer
+    const prevProducts = [...products];
+    const prevMovements = [...movements];
+
     const newMovement: Movement = {
       id: Date.now().toString(),
       productId: product.id,
@@ -331,12 +339,26 @@ export function Movements() {
       }
     }
 
+    const typeLabel = formData.type === "entry" ? "Entrada" : "Salida";
     toast.success(
-      `${formData.type === "entry" ? "Entrada" : "Salida"} registrada: ${quantity} unidades de "${product.name}"${
+      `${typeLabel} registrada: ${quantity} unidades de "${product.name}"${
         isSale && formData.customerName ? ` — Cliente: ${formData.customerName}` : ""
       }`
     );
     setIsDialogOpen(false);
+
+    // Mostrar toast de deshacer — H3: Control y libertad del usuario
+    const productName = product.name;
+    showUndo({
+      message: `${typeLabel}: ${quantity} u. de "${productName}"`,
+      onUndo: () => {
+        storage.saveProducts(prevProducts);
+        storage.saveMovements(prevMovements);
+        setProducts(prevProducts);
+        setMovements(prevMovements);
+        toast.info("Movimiento deshecho");
+      },
+    });
   };
 
   // Productos visibles según rol:
@@ -1231,6 +1253,14 @@ export function Movements() {
           </form>
         </DialogContent>
       </Dialog>
+      {/* Toast de deshacer — H3: Control y libertad del usuario */}
+      {undoConfig && (
+        <UndoToast
+          message={undoConfig.message}
+          onUndo={executeUndo}
+          onDismiss={dismiss}
+        />
+      )}
     </div>
   );
 }
