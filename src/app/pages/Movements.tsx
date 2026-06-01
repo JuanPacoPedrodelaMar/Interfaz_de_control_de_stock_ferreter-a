@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Product, Movement, MOVEMENT_REASONS, Discount, BRANCHES } from "../types";
-import { storage } from "../utils/storage";
+import { Product, Movement, MOVEMENT_REASONS, Discount, BRANCHES, Customer } from "../types";
+import { storage, FREQUENT_CUSTOMER_THRESHOLD } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -40,9 +40,11 @@ import {
   User,
   Tag,
   ShoppingCart,
-  ChevronDown,
   Building2,
   BadgePercent,
+  Lock,
+  Star,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "../components/ui/badge";
@@ -52,15 +54,27 @@ import { Separator } from "../components/ui/separator";
 export function Movements() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
+
+  const isEmployee = currentUser?.role === "employee";
+  const userBranch = currentUser?.branch;
+
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // Estado para auto-detección de cliente frecuente
+  const [foundCustomer, setFoundCustomer] = useState<Customer | null>(null);
+
   // Filtros activos
   const filterType = searchParams.get("filter") as "entry" | "exit" | null;
-  const [branchFilter, setBranchFilter] = useState<string>("all");
+  // Empleados comienzan con su sucursal filtrada; admin ve todo
+  const [branchFilter, setBranchFilter] = useState<string>(
+    isEmployee && userBranch ? userBranch : "all"
+  );
+  // Filtro por cliente (nombre parcial o completo)
+  const [customerFilter, setCustomerFilter] = useState<string>("");
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -93,6 +107,7 @@ export function Movements() {
   }, []);
 
   const handleOpenDialog = () => {
+    setFoundCustomer(null);
     setFormData({
       productId: "",
       type: "",
@@ -135,6 +150,38 @@ export function Movements() {
   }
   const finalUnitPrice = Math.max(0, unitPrice - discountAmount);
   const totalAmount = finalUnitPrice * qty;
+
+  /**
+   * Cuando el empleado escribe el nombre del cliente:
+   * - Busca en la base de datos de clientes
+   * - Si es frecuente, auto-chequea el checkbox y selecciona el descuento frecuente
+   * - Muestra información sobre compras anteriores
+   */
+  const handleCustomerNameChange = (name: string) => {
+    const found = storage.findCustomerByName(name);
+    setFoundCustomer(found || null);
+
+    if (found?.isFrequent) {
+      // Auto-detectar cliente frecuente y aplicar descuento automáticamente
+      const frequentDiscount = activeDiscounts.find(
+        (d) => d.appliesTo === "frequent_customers"
+      );
+      setFormData((prev) => ({
+        ...prev,
+        customerName: name,
+        isFrequentCustomer: true,
+        // Solo auto-aplica el descuento frecuente si no hay uno seleccionado ya
+        discountId: prev.discountId || frequentDiscount?.id || "",
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        customerName: name,
+        // Si el cliente no es frecuente, no modificar el estado del checkbox
+        // (el usuario podría haberlo marcado manualmente)
+      }));
+    }
+  };
 
   const validateForm = () => {
     const errors = {
@@ -189,8 +236,11 @@ export function Movements() {
       isValid = false;
     }
 
-    // Validación específica para ventas
-    if (isSale && selectedDiscount?.appliesTo === "frequent_customers" && !formData.isFrequentCustomer) {
+    if (
+      isSale &&
+      selectedDiscount?.appliesTo === "frequent_customers" &&
+      !formData.isFrequentCustomer
+    ) {
       toast.warning(
         `La oferta "${selectedDiscount.name}" es solo para clientes frecuentes. Marca al cliente como frecuente o selecciona otra oferta.`,
         { duration: 4000 }
@@ -216,7 +266,6 @@ export function Movements() {
 
     const quantity = parseInt(formData.quantity);
 
-    // Crear el movimiento con todos los campos
     const newMovement: Movement = {
       id: Date.now().toString(),
       productId: product.id,
@@ -229,7 +278,8 @@ export function Movements() {
       date: formData.date,
       sellerId: currentUser?.id,
       sellerName: currentUser?.fullName,
-      sellerBranch: currentUser?.branch === "all" ? product.branch : currentUser?.branch,
+      sellerBranch:
+        currentUser?.branch === "all" ? product.branch : currentUser?.branch,
       ...(isSale && {
         customerName: formData.customerName.trim() || undefined,
         customerPhone: formData.customerPhone.trim() || undefined,
@@ -262,11 +312,39 @@ export function Movements() {
     setProducts(updatedProducts);
     setMovements(updatedMovements);
 
+    // Si es una venta con nombre de cliente, actualizar registro de clientes
+    if (isSale && formData.customerName.trim()) {
+      const updatedCustomer = storage.updateCustomerFromSale(
+        formData.customerName.trim(),
+        formData.customerPhone.trim() || undefined
+      );
+
+      // Notificar si el cliente acaba de alcanzar el umbral de cliente frecuente
+      if (
+        updatedCustomer.isFrequent &&
+        updatedCustomer.purchaseCount === FREQUENT_CUSTOMER_THRESHOLD
+      ) {
+        toast.success(
+          `⭐ ¡${updatedCustomer.name} acaba de convertirse en cliente frecuente! (${FREQUENT_CUSTOMER_THRESHOLD} compras)`,
+          { duration: 5000 }
+        );
+      }
+    }
+
     toast.success(
-      `${formData.type === "entry" ? "Entrada" : "Salida"} registrada: ${quantity} unidades de "${product.name}"${isSale && formData.customerName ? ` — Cliente: ${formData.customerName}` : ""}`
+      `${formData.type === "entry" ? "Entrada" : "Salida"} registrada: ${quantity} unidades de "${product.name}"${
+        isSale && formData.customerName ? ` — Cliente: ${formData.customerName}` : ""
+      }`
     );
     setIsDialogOpen(false);
   };
+
+  // Productos visibles según rol:
+  // Empleados solo ven productos de su sucursal en el formulario
+  const visibleProducts =
+    isEmployee && userBranch
+      ? products.filter((p) => p.branch === userBranch)
+      : products;
 
   // Filtrar movimientos
   const filteredMovements = movements
@@ -276,27 +354,34 @@ export function Movements() {
         branchFilter === "all" ||
         m.productBranch === branchFilter ||
         m.sellerBranch === branchFilter;
-      return matchesType && matchesBranch;
+      const matchesCustomer =
+        !customerFilter ||
+        (m.customerName
+          ?.toLowerCase()
+          .includes(customerFilter.toLowerCase()) ?? false);
+      return matchesType && matchesBranch && matchesCustomer;
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const clearFilter = () => setSearchParams({});
 
-  const availableReasons = formData.type ? MOVEMENT_REASONS[formData.type as "entry" | "exit"] : [];
+  const availableReasons = formData.type
+    ? MOVEMENT_REASONS[formData.type as "entry" | "exit"]
+    : [];
 
-  const activeFiltersCount = (filterType ? 1 : 0) + (branchFilter !== "all" ? 1 : 0);
-
-  // Lista de productos: admin ve todos, empleado ve solo su sucursal
-  const visibleProducts = currentUser?.branch === "all"
-    ? products
-    : products.filter((p) => p.branch === currentUser?.branch || true); // Employees can see all for transfers
+  const activeFiltersCount =
+    (filterType ? 1 : 0) +
+    (!isEmployee && branchFilter !== "all" ? 1 : 0) +
+    (customerFilter ? 1 : 0);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-3xl font-semibold text-foreground">Movimientos de Stock</h2>
+            <h2 className="text-3xl font-semibold text-foreground">
+              Movimientos de Stock
+            </h2>
             {filterType && (
               <Badge
                 variant="secondary"
@@ -307,9 +392,13 @@ export function Movements() {
                 }`}
               >
                 {filterType === "entry" ? (
-                  <><TrendingUp className="h-3 w-3" /> Solo Entradas</>
+                  <>
+                    <TrendingUp className="h-3 w-3" /> Solo Entradas
+                  </>
                 ) : (
-                  <><TrendingDown className="h-3 w-3" /> Solo Salidas</>
+                  <>
+                    <TrendingDown className="h-3 w-3" /> Solo Salidas
+                  </>
                 )}
                 <button
                   onClick={clearFilter}
@@ -320,7 +409,8 @@ export function Movements() {
                 </button>
               </Badge>
             )}
-            {branchFilter !== "all" && (
+            {/* Badge de sucursal solo visible para admin */}
+            {!isEmployee && branchFilter !== "all" && (
               <Badge
                 variant="secondary"
                 className="flex items-center gap-1 bg-primary/10 text-primary"
@@ -334,6 +424,34 @@ export function Movements() {
                 >
                   <X className="h-3 w-3" />
                 </button>
+              </Badge>
+            )}
+            {/* Badge de filtro por cliente */}
+            {customerFilter && (
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-400"
+              >
+                <User className="h-3 w-3" />
+                Cliente: {customerFilter}
+                <button
+                  onClick={() => setCustomerFilter("")}
+                  className="ml-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5"
+                  aria-label="Quitar filtro de cliente"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
+            {/* Indicador de sucursal para empleados */}
+            {isEmployee && userBranch && (
+              <Badge
+                variant="secondary"
+                className="flex items-center gap-1 bg-muted text-muted-foreground"
+              >
+                <Building2 className="h-3 w-3" />
+                {userBranch}
+                <Lock className="h-3 w-3 ml-0.5" />
               </Badge>
             )}
           </div>
@@ -355,10 +473,11 @@ export function Movements() {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 p-4" align="end">
+            <PopoverContent className="w-72 p-4" align="end">
               <div className="space-y-4">
                 <h4 className="font-medium text-sm">Filtrar movimientos</h4>
 
+                {/* Filtro por tipo */}
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Por tipo</Label>
                   <div className="flex gap-2">
@@ -389,34 +508,72 @@ export function Movements() {
                   </div>
                 </div>
 
+                {/* Filtro por sucursal: solo visible para admin */}
+                {!isEmployee && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Por sucursal</Label>
+                    <Select
+                      value={branchFilter}
+                      onValueChange={(v) => {
+                        setBranchFilter(v);
+                        setIsFilterOpen(false);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Todas las sucursales" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las sucursales</SelectItem>
+                        {BRANCHES.map((b) => (
+                          <SelectItem key={b} value={b}>
+                            {b}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* ── NUEVO: Filtro por cliente ── */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Por sucursal</Label>
-                  <Select value={branchFilter} onValueChange={(v) => {
-                    setBranchFilter(v);
-                    setIsFilterOpen(false);
-                  }}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Todas las sucursales" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todas las sucursales</SelectItem>
-                      {BRANCHES.map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs text-muted-foreground">
+                    Por cliente
+                  </Label>
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      className="h-8 text-xs pl-7"
+                      placeholder="Ej: Roberto Núñez..."
+                      value={customerFilter}
+                      onChange={(e) => setCustomerFilter(e.target.value)}
+                    />
+                    {customerFilter && (
+                      <button
+                        onClick={() => setCustomerFilter("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {customerFilter && (
+                    <p className="text-xs text-muted-foreground">
+                      {filteredMovements.length} movimiento(s) de "{customerFilter}"
+                    </p>
+                  )}
                 </div>
 
-                {activeFiltersCount > 0 && (
+                {(filterType ||
+                  (!isEmployee && branchFilter !== "all") ||
+                  customerFilter) && (
                   <Button
                     size="sm"
                     variant="ghost"
                     className="w-full h-8 text-xs text-muted-foreground"
                     onClick={() => {
                       clearFilter();
-                      setBranchFilter("all");
+                      if (!isEmployee) setBranchFilter("all");
+                      setCustomerFilter("");
                       setIsFilterOpen(false);
                     }}
                   >
@@ -428,19 +585,23 @@ export function Movements() {
             </PopoverContent>
           </Popover>
 
-          <Button onClick={handleOpenDialog} disabled={products.length === 0}>
+          <Button
+            onClick={handleOpenDialog}
+            disabled={visibleProducts.length === 0}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Nuevo Movimiento
           </Button>
         </div>
       </div>
 
-      {products.length === 0 && (
+      {visibleProducts.length === 0 && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            No hay productos en el inventario. Debes agregar productos antes de registrar
-            movimientos.
+            No hay productos en el inventario
+            {isEmployee && userBranch ? ` de ${userBranch}` : ""}. Debes agregar
+            productos antes de registrar movimientos.
           </AlertDescription>
         </Alert>
       )}
@@ -451,7 +612,9 @@ export function Movements() {
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-muted-foreground">
-                No hay movimientos que coincidan con los filtros aplicados.
+                {customerFilter
+                  ? `No se encontraron movimientos para el cliente "${customerFilter}".`
+                  : "No hay movimientos que coincidan con los filtros aplicados."}
               </p>
             </CardContent>
           </Card>
@@ -471,9 +634,13 @@ export function Movements() {
                         }`}
                       >
                         {movement.type === "entry" ? (
-                          <><TrendingUp className="h-3 w-3" /> Entrada</>
+                          <>
+                            <TrendingUp className="h-3 w-3" /> Entrada
+                          </>
                         ) : (
-                          <><TrendingDown className="h-3 w-3" /> Salida</>
+                          <>
+                            <TrendingDown className="h-3 w-3" /> Salida
+                          </>
                         )}
                       </Badge>
                       {movement.productBranch && (
@@ -500,7 +667,9 @@ export function Movements() {
                     <p className="text-sm text-muted-foreground">Cantidad</p>
                     <p
                       className={`text-lg font-semibold ${
-                        movement.type === "entry" ? "text-blue-600" : "text-green-600"
+                        movement.type === "entry"
+                          ? "text-blue-600"
+                          : "text-green-600"
                       }`}
                     >
                       {movement.type === "entry" ? "+" : "-"}
@@ -525,9 +694,15 @@ export function Movements() {
                           <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <div>
                             <span className="text-muted-foreground">Cliente: </span>
-                            <span className="font-medium">{movement.customerName}</span>
+                            <span className="font-medium">
+                              {movement.customerName}
+                            </span>
                             {movement.isFrequentCustomer && (
-                              <Badge variant="outline" className="ml-1 text-xs py-0 h-4 text-primary border-primary/40">
+                              <Badge
+                                variant="outline"
+                                className="ml-1 text-xs py-0 h-4 text-primary border-primary/40"
+                              >
+                                <Star className="h-2.5 w-2.5 mr-0.5" />
                                 Frecuente
                               </Badge>
                             )}
@@ -542,7 +717,8 @@ export function Movements() {
                             <span className="font-medium">{movement.sellerName}</span>
                             {movement.sellerBranch && (
                               <span className="text-muted-foreground text-xs">
-                                {" "}({movement.sellerBranch})
+                                {" "}
+                                ({movement.sellerBranch})
                               </span>
                             )}
                           </div>
@@ -563,15 +739,22 @@ export function Movements() {
                           <div>
                             <span className="text-muted-foreground">Total: </span>
                             <span className="font-semibold text-primary">
-                              ${movement.totalAmount.toLocaleString("es-AR", {
+                              $
+                              {movement.totalAmount.toLocaleString("es-AR", {
                                 minimumFractionDigits: 2,
                               })}
                             </span>
-                            {movement.discountName && movement.unitPrice && (
-                              <span className="text-muted-foreground text-xs ml-1">
-                                (sin desc.: ${(movement.unitPrice * (movement.quantity || 0)).toLocaleString("es-AR")})
-                              </span>
-                            )}
+                            {movement.discountName &&
+                              movement.unitPrice && (
+                                <span className="text-muted-foreground text-xs ml-1">
+                                  (sin desc.: $
+                                  {(
+                                    movement.unitPrice *
+                                    (movement.quantity || 0)
+                                  ).toLocaleString("es-AR")}
+                                  )
+                                </span>
+                              )}
                           </div>
                         </div>
                       )}
@@ -581,12 +764,13 @@ export function Movements() {
 
                 {movement.description && (
                   <div className="mt-4 p-3 bg-muted rounded-md">
-                    <p className="text-sm text-muted-foreground mb-1">Descripción adicional:</p>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Descripción adicional:
+                    </p>
                     <p className="text-sm text-foreground">{movement.description}</p>
                   </div>
                 )}
 
-                {/* Vendedor para movimientos no-venta */}
                 {movement.reason !== "Venta" && movement.sellerName && (
                   <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <User className="h-3 w-3" />
@@ -608,7 +792,9 @@ export function Movements() {
           <DialogHeader>
             <DialogTitle>Nuevo Movimiento de Stock</DialogTitle>
             <DialogDescription>
-              Registra una entrada (agregar stock) o salida (retirar stock) de productos
+              Registra una entrada (agregar stock) o salida (retirar stock) de
+              productos
+              {isEmployee && userBranch ? ` de ${userBranch}` : ""}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
@@ -620,20 +806,24 @@ export function Movements() {
                 </Label>
                 <Select
                   value={formData.productId}
-                  onValueChange={(value) => setFormData({ ...formData, productId: value })}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, productId: value })
+                  }
                 >
                   <SelectTrigger id="product">
                     <SelectValue placeholder="Selecciona un producto" />
                   </SelectTrigger>
                   <SelectContent>
-                    {products.length === 0 ? (
+                    {visibleProducts.length === 0 ? (
                       <div className="p-4 text-center text-sm text-muted-foreground">
                         No hay productos registrados
+                        {isEmployee && userBranch ? ` en ${userBranch}` : ""}
                       </div>
                     ) : (
-                      products.map((product) => (
+                      visibleProducts.map((product) => (
                         <SelectItem key={product.id} value={product.id}>
-                          {product.name} · {product.branch} · Stock: {product.currentStock}
+                          {product.name} · {product.branch} · Stock:{" "}
+                          {product.currentStock}
                         </SelectItem>
                       ))
                     )}
@@ -646,7 +836,10 @@ export function Movements() {
                   <div className="p-3 bg-muted rounded-md text-sm">
                     <p className="font-medium">{selectedProduct.name}</p>
                     <p className="text-muted-foreground">
-                      Stock: <span className="font-semibold">{selectedProduct.currentStock}</span>{" "}
+                      Stock:{" "}
+                      <span className="font-semibold">
+                        {selectedProduct.currentStock}
+                      </span>{" "}
                       unidades · {selectedProduct.category} ·{" "}
                       <span className="font-medium">{selectedProduct.branch}</span>
                     </p>
@@ -704,7 +897,9 @@ export function Movements() {
                     type="number"
                     min="1"
                     value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, quantity: e.target.value })
+                    }
                     placeholder="0"
                   />
                   {formErrors.quantity && (
@@ -729,7 +924,9 @@ export function Movements() {
                     id="date"
                     type="date"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, date: e.target.value })
+                    }
                     max={new Date().toISOString().split("T")[0]}
                   />
                   {formErrors.date && (
@@ -788,30 +985,72 @@ export function Movements() {
                       <span className="text-muted-foreground">Vendedor:</span>
                       <span className="font-medium">{currentUser?.fullName}</span>
                       <span className="text-muted-foreground text-xs">
-                        ({currentUser?.branch === "all" ? selectedProduct?.branch : currentUser?.branch})
+                        (
+                        {currentUser?.branch === "all"
+                          ? selectedProduct?.branch
+                          : currentUser?.branch}
+                        )
                       </span>
                     </div>
 
                     {/* Cliente */}
                     <div className="space-y-2">
-                      <Label htmlFor="customerName">Nombre del cliente (opcional)</Label>
+                      <Label htmlFor="customerName">
+                        Nombre del cliente (opcional)
+                      </Label>
                       <Input
                         id="customerName"
                         value={formData.customerName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, customerName: e.target.value })
-                        }
+                        onChange={(e) => handleCustomerNameChange(e.target.value)}
                         placeholder="Nombre del cliente"
                       />
+                      {/* Info de cliente detectado */}
+                      {formData.customerName && formData.customerName.length >= 2 && (
+                        <div className="text-xs mt-1">
+                          {foundCustomer ? (
+                            foundCustomer.isFrequent ? (
+                              <div className="flex items-center gap-1.5 text-primary font-medium">
+                                <Star className="h-3.5 w-3.5 fill-primary" />
+                                Cliente frecuente detectado —{" "}
+                                {foundCustomer.purchaseCount} compras anteriores.
+                                Descuento aplicado automáticamente.
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-muted-foreground">
+                                <User className="h-3.5 w-3.5" />
+                                Cliente registrado —{" "}
+                                {foundCustomer.purchaseCount} compra
+                                {foundCustomer.purchaseCount !== 1 ? "s" : ""}{" "}
+                                anterior
+                                {foundCustomer.purchaseCount !== 1 ? "es" : ""}.
+                                Necesita{" "}
+                                {FREQUENT_CUSTOMER_THRESHOLD -
+                                  foundCustomer.purchaseCount}{" "}
+                                más para ser frecuente.
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-muted-foreground">
+                              <User className="h-3.5 w-3.5" />
+                              Cliente nuevo
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="customerPhone">Teléfono del cliente (opcional)</Label>
+                      <Label htmlFor="customerPhone">
+                        Teléfono del cliente (opcional)
+                      </Label>
                       <Input
                         id="customerPhone"
                         value={formData.customerPhone}
                         onChange={(e) =>
-                          setFormData({ ...formData, customerPhone: e.target.value })
+                          setFormData({
+                            ...formData,
+                            customerPhone: e.target.value,
+                          })
                         }
                         placeholder="Ej: 011-1234-5678"
                       />
@@ -831,13 +1070,20 @@ export function Movements() {
                       />
                       <Label htmlFor="isFrequent" className="cursor-pointer">
                         Cliente frecuente
+                        {foundCustomer?.isFrequent && (
+                          <span className="ml-1.5 text-xs text-primary">
+                            (auto-detectado)
+                          </span>
+                        )}
                       </Label>
                     </div>
 
                     {/* Descuento */}
                     {activeDiscounts.length > 0 && (
                       <div className="space-y-2">
-                        <Label htmlFor="discount">Aplicar oferta / descuento</Label>
+                        <Label htmlFor="discount">
+                          Aplicar oferta / descuento
+                        </Label>
                         <Select
                           value={formData.discountId}
                           onValueChange={(v) =>
@@ -850,8 +1096,10 @@ export function Movements() {
                           <SelectContent>
                             <SelectItem value="">Sin descuento</SelectItem>
                             {activeDiscounts.map((d) => {
-                              const requiresFrequent = d.appliesTo === "frequent_customers";
-                              const canApply = !requiresFrequent || formData.isFrequentCustomer;
+                              const requiresFrequent =
+                                d.appliesTo === "frequent_customers";
+                              const canApply =
+                                !requiresFrequent || formData.isFrequentCustomer;
                               return (
                                 <SelectItem
                                   key={d.id}
@@ -876,13 +1124,23 @@ export function Movements() {
                             })}
                           </SelectContent>
                         </Select>
+                        {foundCustomer?.isFrequent &&
+                          formData.discountId &&
+                          selectedDiscount?.appliesTo === "frequent_customers" && (
+                            <p className="text-xs text-primary flex items-center gap-1">
+                              <Star className="h-3 w-3 fill-primary" />
+                              Descuento aplicado automáticamente por cliente frecuente
+                            </p>
+                          )}
                       </div>
                     )}
 
                     {/* Preview de precio */}
                     {selectedProduct && qty > 0 && (
                       <div className="p-3 bg-primary/5 border border-primary/20 rounded-md space-y-1 text-sm">
-                        <p className="font-medium text-foreground">Resumen de la venta</p>
+                        <p className="font-medium text-foreground">
+                          Resumen de la venta
+                        </p>
                         <div className="grid grid-cols-2 gap-1 text-muted-foreground">
                           <span>Precio unitario:</span>
                           <span className="text-right font-medium text-foreground">
@@ -892,13 +1150,15 @@ export function Movements() {
                             <>
                               <span>Descuento ({selectedDiscount.name}):</span>
                               <span className="text-right font-medium text-green-600">
-                                -${discountAmount.toLocaleString("es-AR", {
+                                -$
+                                {discountAmount.toLocaleString("es-AR", {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
                               <span>Precio final por unidad:</span>
                               <span className="text-right font-medium text-foreground">
-                                ${finalUnitPrice.toLocaleString("es-AR", {
+                                $
+                                {finalUnitPrice.toLocaleString("es-AR", {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
@@ -912,7 +1172,8 @@ export function Movements() {
                         <div className="flex justify-between pt-1 border-t border-primary/20 font-semibold text-foreground">
                           <span>Total:</span>
                           <span className="text-primary">
-                            ${totalAmount.toLocaleString("es-AR", {
+                            $
+                            {totalAmount.toLocaleString("es-AR", {
                               minimumFractionDigits: 2,
                             })}
                           </span>
@@ -932,13 +1193,17 @@ export function Movements() {
                     <span className="text-destructive"> *</span>
                   )}
                   {formData.reason && formData.reason !== "Otro" && (
-                    <span className="text-muted-foreground text-xs ml-1">(opcional)</span>
+                    <span className="text-muted-foreground text-xs ml-1">
+                      (opcional)
+                    </span>
                   )}
                 </Label>
                 <Textarea
                   id="description"
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
                   placeholder={
                     formData.reason === "Otro"
                       ? "Explica el motivo de este movimiento (obligatorio)"
@@ -947,7 +1212,9 @@ export function Movements() {
                   rows={3}
                 />
                 {formErrors.description && (
-                  <p className="text-sm text-destructive">{formErrors.description}</p>
+                  <p className="text-sm text-destructive">
+                    {formErrors.description}
+                  </p>
                 )}
               </div>
             </div>

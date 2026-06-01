@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Product } from "../types";
 import { storage } from "../utils/storage";
+import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { AlertTriangle, Package, ShoppingCart, Filter } from "lucide-react";
+import { AlertTriangle, Package, ShoppingCart, Filter, Building2, Lock } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import {
@@ -15,8 +16,15 @@ import {
 import { BRANCHES } from "../types";
 
 export function Restock() {
+  const { currentUser } = useAuth();
+  const isEmployee = currentUser?.role === "employee";
+  const userBranch = currentUser?.branch;
+
   const [products, setProducts] = useState<Product[]>([]);
-  const [branchFilter, setBranchFilter] = useState<string>("all");
+  // Empleados siempre ven solo su sucursal; admin puede elegir
+  const [branchFilter, setBranchFilter] = useState<string>(
+    isEmployee && userBranch ? userBranch : "all"
+  );
 
   useEffect(() => {
     setProducts(storage.getProducts());
@@ -41,27 +49,46 @@ export function Restock() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-3xl font-semibold text-foreground">Productos a Reponer</h2>
-          <p className="text-muted-foreground mt-1">
-            Listado de productos por debajo del stock mínimo (verificado por sucursal)
+          <p className="text-muted-foreground mt-1 flex items-center gap-2">
+            {isEmployee && userBranch ? (
+              <>
+                <Building2 className="h-4 w-4" />
+                {userBranch} — productos por debajo del stock mínimo
+              </>
+            ) : (
+              "Listado de productos por debajo del stock mínimo (verificado por sucursal)"
+            )}
           </p>
         </div>
+
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={branchFilter} onValueChange={setBranchFilter}>
-              <SelectTrigger className="w-[180px]" aria-label="Filtrar por sucursal">
-                <SelectValue placeholder="Filtrar sucursal" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las sucursales</SelectItem>
-                {BRANCHES.map((branch) => (
-                  <SelectItem key={branch} value={branch}>
-                    {branch}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* El selector de sucursal solo aparece para el admin */}
+          {!isEmployee ? (
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger className="w-[180px]" aria-label="Filtrar por sucursal">
+                  <SelectValue placeholder="Filtrar sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las sucursales</SelectItem>
+                  {BRANCHES.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            /* Para empleados: indicador visual de sucursal bloqueada */
+            <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-muted-foreground">
+              <Building2 className="h-4 w-4" />
+              <span>{userBranch}</span>
+              <Lock className="h-3.5 w-3.5" />
+            </div>
+          )}
+
           {lowStockProducts.length > 0 && (
             <Button onClick={handlePrint} variant="outline">
               <ShoppingCart className="h-4 w-4 mr-2" />
@@ -91,7 +118,7 @@ export function Restock() {
         </Card>
       )}
 
-      {branchFilter !== "all" &&
+      {!isEmployee && branchFilter !== "all" &&
         lowStockProducts.length === 0 &&
         products.filter((p) => p.currentStock <= p.minStock).length > 0 && (
           <Card>
@@ -115,16 +142,30 @@ export function Restock() {
                 ¡Todo está en orden!
               </h3>
               <p className="text-muted-foreground">
-                No hay productos que requieran reposición en este momento.
+                No hay productos que requieran reposición en este momento
+                {isEmployee && userBranch ? ` en ${userBranch}` : ""}.
+              </p>
+            </CardContent>
+          </Card>
+        ) : lowStockProducts.length === 0 && isEmployee ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Package className="h-12 w-12 text-primary mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">
+                ¡Todo está en orden en tu sucursal!
+              </h3>
+              <p className="text-muted-foreground">
+                No hay productos con stock bajo en {userBranch}.
               </p>
             </CardContent>
           </Card>
         ) : (
           lowStockProducts.map((product) => {
             const deficit = product.minStock - product.currentStock;
-            const percentage = product.minStock > 0
-              ? (product.currentStock / product.minStock) * 100
-              : 0;
+            const percentage =
+              product.minStock > 0
+                ? (product.currentStock / product.minStock) * 100
+                : 0;
             const severity =
               percentage <= 0
                 ? "critical"
@@ -134,7 +175,6 @@ export function Restock() {
                 ? "medium"
                 : "low";
 
-            // Colores amber para stock bajo (distinto al naranja principal)
             const severityBorderColors = {
               critical: "border-amber-600 dark:border-amber-600",
               high: "border-amber-500 dark:border-amber-500",
@@ -157,9 +197,11 @@ export function Restock() {
             };
 
             const severityBadgeColors = {
-              critical: "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400 border-amber-400 dark:border-amber-700",
+              critical:
+                "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400 border-amber-400 dark:border-amber-700",
               high: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700",
-              medium: "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-500 border-amber-200 dark:border-amber-800",
+              medium:
+                "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-500 border-amber-200 dark:border-amber-800",
               low: "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800",
             };
 

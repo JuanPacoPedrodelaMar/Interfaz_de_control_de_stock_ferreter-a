@@ -7,6 +7,9 @@ const CUSTOMERS_KEY = "ferreteria_customers";
 const DISCOUNTS_KEY = "ferreteria_discounts";
 const SESSION_KEY = "ferreteria_session";
 
+// Umbral de compras para que un cliente sea considerado frecuente
+export const FREQUENT_CUSTOMER_THRESHOLD = 3;
+
 const DEFAULT_USERS: User[] = [
   {
     id: "u1",
@@ -102,6 +105,61 @@ export const storage = {
   },
   saveCustomers(customers: Customer[]): void {
     localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
+  },
+
+  /**
+   * Busca un cliente por nombre (case-insensitive, coincidencia exacta).
+   * Retorna el cliente si existe, undefined si no.
+   */
+  findCustomerByName(name: string): Customer | undefined {
+    if (!name.trim()) return undefined;
+    const customers = this.getCustomers();
+    const normalized = name.trim().toLowerCase();
+    return customers.find((c) => c.name.trim().toLowerCase() === normalized);
+  },
+
+  /**
+   * Registra una compra para un cliente. Si no existe lo crea.
+   * Incrementa su contador de compras y lo marca como frecuente
+   * cuando alcanza FREQUENT_CUSTOMER_THRESHOLD.
+   * Retorna el cliente actualizado.
+   */
+  updateCustomerFromSale(name: string, phone?: string): Customer {
+    const customers = this.getCustomers();
+    const normalized = name.trim().toLowerCase();
+    const existingIndex = customers.findIndex(
+      (c) => c.name.trim().toLowerCase() === normalized
+    );
+
+    let updatedCustomer: Customer;
+
+    if (existingIndex !== -1) {
+      const existing = customers[existingIndex];
+      const newCount = existing.purchaseCount + 1;
+      updatedCustomer = {
+        ...existing,
+        purchaseCount: newCount,
+        isFrequent: newCount >= FREQUENT_CUSTOMER_THRESHOLD,
+        // Actualizar teléfono si no tenía uno y ahora se provee
+        ...(phone && phone.trim() && !existing.phone
+          ? { phone: phone.trim() }
+          : {}),
+      };
+      customers[existingIndex] = updatedCustomer;
+    } else {
+      updatedCustomer = {
+        id: Date.now().toString(),
+        name: name.trim(),
+        phone: phone?.trim() || undefined,
+        isFrequent: 1 >= FREQUENT_CUSTOMER_THRESHOLD,
+        purchaseCount: 1,
+        createdAt: new Date().toISOString(),
+      };
+      customers.push(updatedCustomer);
+    }
+
+    this.saveCustomers(customers);
+    return updatedCustomer;
   },
 
   // Discounts

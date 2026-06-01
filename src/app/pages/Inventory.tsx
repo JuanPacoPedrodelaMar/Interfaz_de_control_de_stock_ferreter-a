@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Product, CATEGORIES, BRANCHES } from "../types";
 import { storage } from "../utils/storage";
+import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -20,7 +21,16 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Plus, Search, Edit, Trash2, AlertTriangle, Building2, Copy } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  AlertTriangle,
+  Building2,
+  Copy,
+  Lock,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -35,10 +45,17 @@ import {
 import { Badge } from "../components/ui/badge";
 
 export function Inventory() {
+  const { currentUser } = useAuth();
+  const isEmployee = currentUser?.role === "employee";
+  const userBranch = currentUser?.branch;
+
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [branchFilter, setBranchFilter] = useState<string>("all");
+  // Empleados comienzan con su sucursal; admin comienza con "all"
+  const [branchFilter, setBranchFilter] = useState<string>(
+    isEmployee && userBranch ? userBranch : "all"
+  );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -49,7 +66,7 @@ export function Inventory() {
   const [formData, setFormData] = useState({
     name: "",
     category: "",
-    branch: "",
+    branch: isEmployee && userBranch ? userBranch : "",
     price: "",
     currentStock: "",
     minStock: "",
@@ -78,7 +95,12 @@ export function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredProducts = products.filter((product) => {
+  // Los empleados solo ven los productos de su sucursal
+  const visibleProducts = isEmployee && userBranch
+    ? products.filter((p) => p.branch === userBranch)
+    : products;
+
+  const filteredProducts = visibleProducts.filter((product) => {
     const matchesSearch =
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -101,7 +123,15 @@ export function Inventory() {
       });
     } else {
       setEditingProduct(null);
-      setFormData({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+      setFormData({
+        name: "",
+        category: "",
+        // Los empleados siempre crean productos en su propia sucursal
+        branch: isEmployee && userBranch ? userBranch : "",
+        price: "",
+        currentStock: "",
+        minStock: "",
+      });
     }
     setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
     setSimilarProducts([]);
@@ -127,11 +157,12 @@ export function Inventory() {
   const handleCopyToNewBranch = (product: Product) => {
     setSimilarProducts([]);
     setShowBranchCopy(false);
-    setEditingProduct(null); // Nuevo producto, no editar
+    setEditingProduct(null);
     setFormData({
       name: product.name,
       category: product.category,
-      branch: "", // El usuario elige la nueva sucursal
+      // Empleados solo pueden copiar a su propia sucursal
+      branch: isEmployee && userBranch ? userBranch : "",
       price: product.price.toString(),
       currentStock: "0",
       minStock: product.minStock.toString(),
@@ -158,7 +189,14 @@ export function Inventory() {
     setEditingProduct(null);
     setSimilarProducts([]);
     setShowBranchCopy(false);
-    setFormData({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormData({
+      name: "",
+      category: "",
+      branch: isEmployee && userBranch ? userBranch : "",
+      price: "",
+      currentStock: "",
+      minStock: "",
+    });
     setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
   };
 
@@ -289,9 +327,18 @@ export function Inventory() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-semibold text-foreground">Inventario</h2>
-          <p className="text-muted-foreground mt-1">
-            Gestiona todos tus productos ({products.length} registros en{" "}
-            {new Set(products.map((p) => p.branch)).size} sucursales)
+          <p className="text-muted-foreground mt-1 flex items-center gap-2">
+            {isEmployee && userBranch ? (
+              <>
+                <Building2 className="h-4 w-4" />
+                {userBranch} — {visibleProducts.length} productos registrados
+              </>
+            ) : (
+              <>
+                Gestiona todos tus productos ({products.length} registros en{" "}
+                {new Set(products.map((p) => p.branch)).size} sucursales)
+              </>
+            )}
           </p>
         </div>
         <Button onClick={() => handleOpenDialog()}>
@@ -303,11 +350,11 @@ export function Inventory() {
       {/* Filtros */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className={`grid gap-4 ${isEmployee ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nombre, categoría o sucursal..."
+                placeholder="Buscar por nombre o categoría..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -327,23 +374,27 @@ export function Inventory() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={branchFilter} onValueChange={setBranchFilter}>
-              <SelectTrigger aria-label="Filtrar por sucursal">
-                <SelectValue placeholder="Filtrar por sucursal" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las sucursales</SelectItem>
-                {BRANCHES.map((branch) => (
-                  <SelectItem key={branch} value={branch}>
-                    {branch}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+            {/* El filtro de sucursal solo aparece para el admin */}
+            {!isEmployee && (
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger aria-label="Filtrar por sucursal">
+                  <SelectValue placeholder="Filtrar por sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las sucursales</SelectItem>
+                  {BRANCHES.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
-          {(searchTerm || categoryFilter !== "all" || branchFilter !== "all") && (
+          {(searchTerm || categoryFilter !== "all" || (!isEmployee && branchFilter !== "all")) && (
             <p className="text-sm text-muted-foreground mt-3">
-              Mostrando {filteredProducts.length} de {products.length} registros
+              Mostrando {filteredProducts.length} de {visibleProducts.length} registros
             </p>
           )}
         </CardContent>
@@ -355,7 +406,7 @@ export function Inventory() {
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-muted-foreground">
-                {products.length === 0
+                {visibleProducts.length === 0
                   ? "No hay productos registrados. ¡Agrega tu primer producto usando el botón 'Nuevo Producto'!"
                   : "No se encontraron productos con los filtros aplicados."}
               </p>
@@ -378,7 +429,7 @@ export function Inventory() {
                         {isLowStock && (
                           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
                         )}
-                        {branchCount > 1 && (
+                        {!isEmployee && branchCount > 1 && (
                           <Badge variant="outline" className="flex items-center gap-1 text-xs">
                             <Building2 className="h-3 w-3" />
                             {branchCount} sucursales
@@ -465,6 +516,8 @@ export function Inventory() {
             <DialogDescription>
               {editingProduct
                 ? "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
+                : isEmployee
+                ? `Los productos se agregarán al inventario de ${userBranch}.`
                 : "Completa los campos. El mismo producto puede existir en distintas sucursales con stock separado."}
             </DialogDescription>
           </DialogHeader>
@@ -561,26 +614,34 @@ export function Inventory() {
                 )}
               </div>
 
-              {/* Sucursal */}
+              {/* Sucursal: bloqueada para empleados, editable para admin */}
               <div className="space-y-2">
                 <Label htmlFor="branch">
                   Sucursal <span className="text-destructive">*</span>
                 </Label>
-                <Select
-                  value={formData.branch}
-                  onValueChange={(value) => setFormData({ ...formData, branch: value })}
-                >
-                  <SelectTrigger id="branch">
-                    <SelectValue placeholder="Selecciona una sucursal" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BRANCHES.map((branch) => (
-                      <SelectItem key={branch} value={branch}>
-                        {branch}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isEmployee ? (
+                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-foreground">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="flex-1">{userBranch}</span>
+                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                ) : (
+                  <Select
+                    value={formData.branch}
+                    onValueChange={(value) => setFormData({ ...formData, branch: value })}
+                  >
+                    <SelectTrigger id="branch">
+                      <SelectValue placeholder="Selecciona una sucursal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BRANCHES.map((branch) => (
+                        <SelectItem key={branch} value={branch}>
+                          {branch}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {formErrors.branch && (
                   <p className="text-sm text-destructive">{formErrors.branch}</p>
                 )}

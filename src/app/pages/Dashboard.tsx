@@ -1,25 +1,48 @@
 import { useEffect, useState } from "react";
 import { Product, Movement } from "../types";
 import { storage } from "../utils/storage";
+import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { AlertTriangle, Package, TrendingUp, TrendingDown } from "lucide-react";
+import { AlertTriangle, Package, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Link } from "react-router";
 
 export function Dashboard() {
+  const { currentUser } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+
+  const isEmployee = currentUser?.role === "employee";
+  const userBranch = currentUser?.branch;
 
   useEffect(() => {
     setProducts(storage.getProducts());
     setMovements(storage.getMovements());
   }, []);
 
-  const lowStockProducts = products.filter((p) => p.currentStock <= p.minStock);
-  const totalValue = products.reduce((sum, p) => sum + p.price * p.currentStock, 0);
+  // Los empleados solo ven los datos de su sucursal
+  const visibleProducts =
+    isEmployee && userBranch
+      ? products.filter((p) => p.branch === userBranch)
+      : products;
+
+  const visibleMovements =
+    isEmployee && userBranch
+      ? movements.filter(
+          (m) => m.productBranch === userBranch || m.sellerBranch === userBranch
+        )
+      : movements;
+
+  const lowStockProducts = visibleProducts.filter(
+    (p) => p.currentStock <= p.minStock
+  );
+  const totalValue = visibleProducts.reduce(
+    (sum, p) => sum + p.price * p.currentStock,
+    0
+  );
 
   const today = new Date().toISOString().split("T")[0];
-  const todayMovements = movements.filter((m) => m.date === today);
+  const todayMovements = visibleMovements.filter((m) => m.date === today);
   const todayEntries = todayMovements.filter((m) => m.type === "entry").length;
   const todayExits = todayMovements.filter((m) => m.type === "exit").length;
 
@@ -27,7 +50,16 @@ export function Dashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-semibold text-foreground">Dashboard</h2>
-        <p className="text-muted-foreground mt-1">Resumen general del inventario</p>
+        <p className="text-muted-foreground mt-1 flex items-center gap-2">
+          {isEmployee && userBranch ? (
+            <>
+              <Building2 className="h-4 w-4" />
+              Resumen de inventario — {userBranch}
+            </>
+          ) : (
+            "Resumen general del inventario"
+          )}
+        </p>
       </div>
 
       {/* Alerta stock bajo - en amber, diferente al naranja principal */}
@@ -36,7 +68,7 @@ export function Dashboard() {
           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
           <AlertDescription className="text-amber-800 dark:text-amber-300">
             <strong>{lowStockProducts.length} producto(s)</strong> están por debajo del stock
-            mínimo.{" "}
+            mínimo{isEmployee && userBranch ? ` en ${userBranch}` : ""}.{" "}
             <Link
               to="/restock"
               className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
@@ -56,8 +88,10 @@ export function Dashboard() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-semibold">{products.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Registros de inventario</p>
+              <div className="text-2xl font-semibold">{visibleProducts.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isEmployee ? "En tu sucursal" : "Registros de inventario"}
+              </p>
             </CardContent>
           </Card>
         </Link>
@@ -107,57 +141,69 @@ export function Dashboard() {
       {/* Valor total del inventario */}
       <Card>
         <CardHeader>
-          <CardTitle>Valor Total del Inventario</CardTitle>
+          <CardTitle>
+            Valor Total del Inventario
+            {isEmployee && userBranch && (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                — {userBranch}
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-semibold text-primary">
             ${totalValue.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
           </div>
-          <p className="text-sm text-muted-foreground mt-2">
-            Basado en el stock actual y precios registrados
+          <p className="text-sm text-muted-foreground mt-1">
+            Basado en {visibleProducts.length} producto(s) y su stock actual
           </p>
         </CardContent>
       </Card>
 
-      {/* Productos con stock crítico */}
-      {lowStockProducts.length > 0 && (
+      {/* Movimientos recientes */}
+      {visibleMovements.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
-              Productos con Stock Crítico
-            </CardTitle>
+            <CardTitle>Movimientos Recientes</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {lowStockProducts.slice(0, 5).map((product) => (
+              {visibleMovements.slice(0, 5).map((m) => (
                 <div
-                  key={product.id}
-                  className="flex items-center justify-between border-b border-border pb-3 last:border-0 last:pb-0"
+                  key={m.id}
+                  className="flex items-center justify-between text-sm"
                 >
-                  <div>
-                    <p className="font-medium text-foreground">{product.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {product.category} • {product.branch || "Sin sucursal"}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {m.type === "entry" ? (
+                      <TrendingUp className="h-4 w-4 text-blue-600" />
+                    ) : (
+                      <TrendingDown className="h-4 w-4 text-green-600" />
+                    )}
+                    <span className="font-medium">{m.productName}</span>
+                    <span className="text-muted-foreground">{m.reason}</span>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium text-amber-600 dark:text-amber-500">
-                      Stock: {product.currentStock} / {product.minStock}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Mínimo requerido</p>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={
+                        m.type === "entry" ? "text-blue-600" : "text-green-600"
+                      }
+                    >
+                      {m.type === "entry" ? "+" : "-"}
+                      {m.quantity}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {new Date(m.date + "T12:00:00").toLocaleDateString("es-AR")}
+                    </span>
                   </div>
                 </div>
               ))}
-              {lowStockProducts.length > 5 && (
-                <Link
-                  to="/restock"
-                  className="block text-center text-sm text-primary hover:text-primary/80 font-medium pt-2"
-                >
-                  Ver todos los productos a reponer ({lowStockProducts.length})
-                </Link>
-              )}
             </div>
+            <Link
+              to="/movements"
+              className="text-sm text-primary hover:underline mt-4 inline-block"
+            >
+              Ver todos los movimientos →
+            </Link>
           </CardContent>
         </Card>
       )}
