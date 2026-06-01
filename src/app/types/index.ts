@@ -1,3 +1,32 @@
+export interface User {
+  id: string;
+  username: string;
+  password: string;
+  role: "admin" | "employee";
+  branch: string; // 'all' for admin
+  fullName: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  isFrequent: boolean;
+  purchaseCount: number;
+  createdAt: string;
+}
+
+export interface Discount {
+  id: string;
+  name: string;
+  type: "percentage" | "fixed";
+  value: number;
+  isActive: boolean;
+  appliesTo: "all" | "frequent_customers";
+  createdAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -13,11 +42,25 @@ export interface Movement {
   id: string;
   productId: string;
   productName: string;
+  productBranch?: string;
   type: "entry" | "exit";
   quantity: number;
   reason: string;
   description?: string;
   date: string;
+  // Sale info (when type=exit, reason=Venta)
+  customerName?: string;
+  customerPhone?: string;
+  isFrequentCustomer?: boolean;
+  sellerId?: string;
+  sellerName?: string;
+  sellerBranch?: string;
+  discountId?: string;
+  discountName?: string;
+  discountValue?: number;
+  unitPrice?: number;
+  finalUnitPrice?: number;
+  totalAmount?: number;
 }
 
 export const CATEGORIES = [

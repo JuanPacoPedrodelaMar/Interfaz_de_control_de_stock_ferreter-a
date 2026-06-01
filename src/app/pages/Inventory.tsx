@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Plus, Search, Edit, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Search, Edit, Trash2, AlertTriangle, Building2, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -32,6 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
+import { Badge } from "../components/ui/badge";
 
 export function Inventory() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -42,6 +43,7 @@ export function Inventory() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
+  const [showBranchCopy, setShowBranchCopy] = useState(false);
   const nameInputRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
@@ -72,7 +74,6 @@ export function Inventory() {
         setSimilarProducts([]);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -100,39 +101,42 @@ export function Inventory() {
       });
     } else {
       setEditingProduct(null);
-      setFormData({
-        name: "",
-        category: "",
-        branch: "",
-        price: "",
-        currentStock: "",
-        minStock: "",
-      });
+      setFormData({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
     }
-    setFormErrors({
-      name: "",
-      category: "",
-      branch: "",
-      price: "",
-      currentStock: "",
-      minStock: "",
-    });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
     setSimilarProducts([]);
+    setShowBranchCopy(false);
     setIsDialogOpen(true);
   };
 
   const handleNameChange = (name: string) => {
     setFormData({ ...formData, name });
-
-    // Solo buscar productos similares si no estamos editando y hay texto
     if (!editingProduct && name.trim().length >= 2) {
       const similar = products.filter((p) =>
         p.name.toLowerCase().includes(name.toLowerCase())
       );
       setSimilarProducts(similar);
+      setShowBranchCopy(similar.length > 0);
     } else {
       setSimilarProducts([]);
+      setShowBranchCopy(false);
     }
+  };
+
+  // Copiar configuración de un producto existente para agregar a otra sucursal
+  const handleCopyToNewBranch = (product: Product) => {
+    setSimilarProducts([]);
+    setShowBranchCopy(false);
+    setEditingProduct(null); // Nuevo producto, no editar
+    setFormData({
+      name: product.name,
+      category: product.category,
+      branch: "", // El usuario elige la nueva sucursal
+      price: product.price.toString(),
+      currentStock: "0",
+      minStock: product.minStock.toString(),
+    });
+    toast.info(`Configuración copiada de "${product.name}". Selecciona la nueva sucursal y ajusta el stock.`);
   };
 
   const handleSelectExistingProduct = (product: Product) => {
@@ -146,43 +150,22 @@ export function Inventory() {
       currentStock: product.currentStock.toString(),
       minStock: product.minStock.toString(),
     });
-    toast.info(`Editando producto existente: "${product.name}"`);
+    toast.info(`Editando producto existente: "${product.name}" en ${product.branch}`);
   };
 
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingProduct(null);
     setSimilarProducts([]);
-    setFormData({
-      name: "",
-      category: "",
-      branch: "",
-      price: "",
-      currentStock: "",
-      minStock: "",
-    });
-    setFormErrors({
-      name: "",
-      category: "",
-      branch: "",
-      price: "",
-      currentStock: "",
-      minStock: "",
-    });
+    setShowBranchCopy(false);
+    setFormData({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
   };
 
   const validateForm = () => {
-    const errors = {
-      name: "",
-      category: "",
-      branch: "",
-      price: "",
-      currentStock: "",
-      minStock: "",
-    };
+    const errors = { name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" };
     let isValid = true;
 
-    // H5: Prevención de errores - Validación detallada
     if (!formData.name.trim()) {
       errors.name = "El nombre del producto es obligatorio";
       isValid = false;
@@ -199,6 +182,19 @@ export function Inventory() {
     if (!formData.branch) {
       errors.branch = "Debes seleccionar una sucursal";
       isValid = false;
+    }
+
+    // Si es nuevo producto, verificar que no exista ya en esa sucursal
+    if (!editingProduct && formData.branch) {
+      const duplicate = products.find(
+        (p) =>
+          p.name.toLowerCase() === formData.name.trim().toLowerCase() &&
+          p.branch === formData.branch
+      );
+      if (duplicate) {
+        errors.branch = `Este producto ya existe en "${formData.branch}". Usa editar para modificarlo.`;
+        isValid = false;
+      }
     }
 
     if (!formData.price) {
@@ -231,8 +227,6 @@ export function Inventory() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    // H9: Ayudar a reconocer y recuperarse de errores
     if (!validateForm()) {
       toast.error("Por favor corrige los errores en el formulario");
       return;
@@ -241,7 +235,6 @@ export function Inventory() {
     let updatedProducts: Product[];
 
     if (editingProduct) {
-      // Editar producto existente
       updatedProducts = products.map((p) =>
         p.id === editingProduct.id
           ? {
@@ -255,10 +248,8 @@ export function Inventory() {
             }
           : p
       );
-      // H1: Visibilidad del estado del sistema
-      toast.success(`"${formData.name}" ha sido actualizado correctamente`);
+      toast.success(`"${formData.name}" actualizado correctamente`);
     } else {
-      // Crear nuevo producto
       const newProduct: Product = {
         id: Date.now().toString(),
         name: formData.name.trim(),
@@ -270,8 +261,7 @@ export function Inventory() {
         createdAt: new Date().toISOString(),
       };
       updatedProducts = [...products, newProduct];
-      // H1: Visibilidad del estado del sistema
-      toast.success(`"${formData.name}" ha sido agregado al inventario`);
+      toast.success(`"${formData.name}" agregado al inventario de ${formData.branch}`);
     }
 
     storage.saveProducts(updatedProducts);
@@ -279,25 +269,20 @@ export function Inventory() {
     handleCloseDialog();
   };
 
-  const handleDelete = (product: Product) => {
-    // H3: Control y libertad del usuario + H5: Prevención de errores
-    setProductToDelete(product);
-  };
-
   const confirmDelete = () => {
     if (!productToDelete) return;
-    
     const updatedProducts = products.filter((p) => p.id !== productToDelete.id);
     storage.saveProducts(updatedProducts);
     setProducts(updatedProducts);
-    // H1: Visibilidad del estado del sistema
-    toast.success(`"${productToDelete.name}" ha sido eliminado del inventario`);
+    toast.success(`"${productToDelete.name}" eliminado del inventario`);
     setProductToDelete(null);
   };
 
-  const cancelDelete = () => {
-    setProductToDelete(null);
-  };
+  // Agrupar productos por nombre para mostrar cuántas sucursales tiene
+  const productNameCounts = products.reduce((acc, p) => {
+    acc[p.name.toLowerCase()] = (acc[p.name.toLowerCase()] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   return (
     <div className="space-y-6">
@@ -305,7 +290,8 @@ export function Inventory() {
         <div>
           <h2 className="text-3xl font-semibold text-foreground">Inventario</h2>
           <p className="text-muted-foreground mt-1">
-            Gestiona todos tus productos ({products.length} productos registrados)
+            Gestiona todos tus productos ({products.length} registros en{" "}
+            {new Set(products.map((p) => p.branch)).size} sucursales)
           </p>
         </div>
         <Button onClick={() => handleOpenDialog()}>
@@ -355,10 +341,9 @@ export function Inventory() {
               </SelectContent>
             </Select>
           </div>
-          {/* H1: Visibilidad del estado del sistema */}
           {(searchTerm || categoryFilter !== "all" || branchFilter !== "all") && (
             <p className="text-sm text-muted-foreground mt-3">
-              Mostrando {filteredProducts.length} de {products.length} productos
+              Mostrando {filteredProducts.length} de {products.length} registros
             </p>
           )}
         </CardContent>
@@ -372,26 +357,39 @@ export function Inventory() {
               <p className="text-muted-foreground">
                 {products.length === 0
                   ? "No hay productos registrados. ¡Agrega tu primer producto usando el botón 'Nuevo Producto'!"
-                  : "No se encontraron productos con los filtros aplicados. Intenta cambiar los criterios de búsqueda."}
+                  : "No se encontraron productos con los filtros aplicados."}
               </p>
             </CardContent>
           </Card>
         ) : (
           filteredProducts.map((product) => {
             const isLowStock = product.currentStock <= product.minStock;
+            const branchCount = productNameCounts[product.name.toLowerCase()] || 1;
             return (
-              <Card key={product.id} className={isLowStock ? "border-red-500" : ""}>
+              <Card
+                key={product.id}
+                className={isLowStock ? "border-amber-400 dark:border-amber-700" : ""}
+              >
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-lg">{product.name}</CardTitle>
                         {isLowStock && (
-                          <AlertTriangle className="h-5 w-5 text-red-600" />
+                          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+                        )}
+                        {branchCount > 1 && (
+                          <Badge variant="outline" className="flex items-center gap-1 text-xs">
+                            <Building2 className="h-3 w-3" />
+                            {branchCount} sucursales
+                          </Badge>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {product.category} • {product.branch || "Sin sucursal"}
+                        {product.category} •{" "}
+                        <span className="font-medium text-foreground/80">
+                          {product.branch || "Sin sucursal"}
+                        </span>
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -406,10 +404,10 @@ export function Inventory() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleDelete(product)}
+                        onClick={() => setProductToDelete(product)}
                         aria-label={`Eliminar ${product.name}`}
                       >
-                        <Trash2 className="h-4 w-4 text-red-600" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
                   </div>
@@ -424,7 +422,11 @@ export function Inventory() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Actual</p>
-                      <p className={`text-lg font-semibold ${isLowStock ? "text-red-600" : ""}`}>
+                      <p
+                        className={`text-lg font-semibold ${
+                          isLowStock ? "text-amber-600 dark:text-amber-500" : ""
+                        }`}
+                      >
                         {product.currentStock} unidades
                       </p>
                     </div>
@@ -440,9 +442,9 @@ export function Inventory() {
                     </div>
                   </div>
                   {isLowStock && (
-                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 rounded-md">
-                      <p className="text-sm font-medium text-red-800 dark:text-red-400">
-                        ⚠️ Stock bajo: Este producto requiere reposición urgente
+                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-md">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                        ⚠️ Stock bajo en {product.branch}: Este producto requiere reposición
                       </p>
                     </div>
                   )}
@@ -453,7 +455,7 @@ export function Inventory() {
         )}
       </div>
 
-      {/* Dialog para crear/editar producto */}
+      {/* Dialog crear/editar producto */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -462,15 +464,16 @@ export function Inventory() {
             </DialogTitle>
             <DialogDescription>
               {editingProduct
-                ? "Modifica los datos del producto. Los cambios se guardarán automáticamente."
-                : "Completa todos los campos para agregar un nuevo producto al inventario."}
+                ? "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
+                : "Completa los campos. El mismo producto puede existir en distintas sucursales con stock separado."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
+              {/* Nombre */}
               <div className="space-y-2">
                 <Label htmlFor="name">
-                  Nombre del Producto <span className="text-red-600">*</span>
+                  Nombre del Producto <span className="text-destructive">*</span>
                 </Label>
                 <div className="relative" ref={nameInputRef}>
                   <Input
@@ -480,21 +483,19 @@ export function Inventory() {
                     placeholder="Ingrese nombre del producto"
                     aria-required="true"
                     aria-invalid={!!formErrors.name}
-                    aria-describedby={formErrors.name ? "name-error" : undefined}
                   />
-                  {similarProducts.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[200px] overflow-y-auto">
+                  {/* Panel de productos similares */}
+                  {similarProducts.length > 0 && !editingProduct && (
+                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
                       <div className="p-2 border-b border-border bg-muted/50">
                         <p className="text-xs text-muted-foreground font-medium">
-                          ⚠️ Productos similares encontrados - Haz clic para editar
+                          Este producto existe en otras sucursales — ¿qué deseas hacer?
                         </p>
                       </div>
                       {similarProducts.map((product) => (
-                        <button
+                        <div
                           key={product.id}
-                          type="button"
-                          onClick={() => handleSelectExistingProduct(product)}
-                          className="w-full text-left p-3 hover:bg-accent transition-colors border-b border-border last:border-b-0"
+                          className="p-3 border-b border-border last:border-b-0"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1">
@@ -502,40 +503,49 @@ export function Inventory() {
                                 {product.name}
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                {product.category} • {product.branch}
+                                {product.branch} • Stock: {product.currentStock}
                               </p>
                             </div>
-                            <div className="text-right">
-                              <p className="text-xs text-muted-foreground">
-                                Stock: {product.currentStock}
-                              </p>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyToNewBranch(product)}
+                                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition-colors"
+                                title="Agregar a nueva sucursal con esta configuración"
+                              >
+                                <Copy className="h-3 w-3" />
+                                Nueva sucursal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectExistingProduct(product)}
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors"
+                              >
+                                <Edit className="h-3 w-3" />
+                                Editar
+                              </button>
                             </div>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
                 {formErrors.name && (
-                  <p id="name-error" className="text-sm text-red-600" role="alert">
-                    {formErrors.name}
-                  </p>
+                  <p className="text-sm text-destructive">{formErrors.name}</p>
                 )}
               </div>
 
+              {/* Categoría */}
               <div className="space-y-2">
                 <Label htmlFor="category">
-                  Categoría <span className="text-red-600">*</span>
+                  Categoría <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={formData.category}
                   onValueChange={(value) => setFormData({ ...formData, category: value })}
                 >
-                  <SelectTrigger 
-                    id="category"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.category}
-                  >
+                  <SelectTrigger id="category">
                     <SelectValue placeholder="Selecciona una categoría" />
                   </SelectTrigger>
                   <SelectContent>
@@ -547,25 +557,20 @@ export function Inventory() {
                   </SelectContent>
                 </Select>
                 {formErrors.category && (
-                  <p className="text-sm text-red-600" role="alert">
-                    {formErrors.category}
-                  </p>
+                  <p className="text-sm text-destructive">{formErrors.category}</p>
                 )}
               </div>
 
+              {/* Sucursal */}
               <div className="space-y-2">
                 <Label htmlFor="branch">
-                  Sucursal <span className="text-red-600">*</span>
+                  Sucursal <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={formData.branch}
                   onValueChange={(value) => setFormData({ ...formData, branch: value })}
                 >
-                  <SelectTrigger 
-                    id="branch"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.branch}
-                  >
+                  <SelectTrigger id="branch">
                     <SelectValue placeholder="Selecciona una sucursal" />
                   </SelectTrigger>
                   <SelectContent>
@@ -577,16 +582,20 @@ export function Inventory() {
                   </SelectContent>
                 </Select>
                 {formErrors.branch && (
-                  <p className="text-sm text-red-600" role="alert">
-                    {formErrors.branch}
+                  <p className="text-sm text-destructive">{formErrors.branch}</p>
+                )}
+                {showBranchCopy && formData.branch && !editingProduct && (
+                  <p className="text-xs text-muted-foreground">
+                    Se creará un registro independiente para esta sucursal con su propio stock.
                   </p>
                 )}
               </div>
 
+              {/* Precio y Stock */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="price">
-                    Precio ($) <span className="text-red-600">*</span>
+                    Precio ($) <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="price"
@@ -596,19 +605,15 @@ export function Inventory() {
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     placeholder="0.00"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.price}
                   />
                   {formErrors.price && (
-                    <p className="text-sm text-red-600" role="alert">
-                      {formErrors.price}
-                    </p>
+                    <p className="text-sm text-destructive">{formErrors.price}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="currentStock">
-                    Stock Actual <span className="text-red-600">*</span>
+                    Stock Actual <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="currentStock"
@@ -617,20 +622,16 @@ export function Inventory() {
                     value={formData.currentStock}
                     onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
                     placeholder="0"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.currentStock}
                   />
                   {formErrors.currentStock && (
-                    <p className="text-sm text-red-600" role="alert">
-                      {formErrors.currentStock}
-                    </p>
+                    <p className="text-sm text-destructive">{formErrors.currentStock}</p>
                   )}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="minStock">
-                  Stock Mínimo <span className="text-red-600">*</span>
+                  Stock Mínimo <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="minStock"
@@ -639,16 +640,12 @@ export function Inventory() {
                   value={formData.minStock}
                   onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
                   placeholder="0"
-                  aria-required="true"
-                  aria-invalid={!!formErrors.minStock}
                 />
                 {formErrors.minStock && (
-                  <p className="text-sm text-red-600" role="alert">
-                    {formErrors.minStock}
-                  </p>
+                  <p className="text-sm text-destructive">{formErrors.minStock}</p>
                 )}
                 <p className="text-sm text-muted-foreground">
-                  Se mostrará una alerta cuando el stock sea igual o menor a este valor
+                  Alerta cuando el stock sea igual o menor a este valor (por sucursal)
                 </p>
               </div>
             </div>
@@ -664,25 +661,26 @@ export function Inventory() {
         </DialogContent>
       </Dialog>
 
-      {/* Alert Dialog para confirmación de eliminación */}
-      <AlertDialog open={!!productToDelete} onOpenChange={(open) => !open && cancelDelete()}>
+      {/* Confirm delete */}
+      <AlertDialog
+        open={!!productToDelete}
+        onOpenChange={(open) => !open && setProductToDelete(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro de eliminar este producto?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar este producto?</AlertDialogTitle>
             <AlertDialogDescription>
-              Estás a punto de eliminar "{productToDelete?.name}" del inventario.
-              Esta acción no se puede deshacer. El producto y todo su historial serán eliminados permanentemente.
+              Estás a punto de eliminar "{productToDelete?.name}" de {productToDelete?.branch}.
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={cancelDelete}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
-              Sí, eliminar producto
+              Sí, eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

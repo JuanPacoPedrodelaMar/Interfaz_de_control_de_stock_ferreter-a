@@ -30,18 +30,21 @@ export function Dashboard() {
         <p className="text-muted-foreground mt-1">Resumen general del inventario</p>
       </div>
 
-      {/* Alertas de stock bajo */}
+      {/* Alerta stock bajo - en amber, diferente al naranja principal */}
       {lowStockProducts.length > 0 && (
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300">
             <strong>{lowStockProducts.length} producto(s)</strong> están por debajo del stock
             mínimo.{" "}
-            <Link to="/restock" className="underline font-medium">
+            <Link
+              to="/restock"
+              className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
+            >
               Ver productos a reponer
             </Link>
           </AlertDescription>
-        </Alert>
+        </div>
       )}
 
       {/* Tarjetas de resumen */}
@@ -54,7 +57,7 @@ export function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{products.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Productos registrados</p>
+              <p className="text-xs text-muted-foreground mt-1">Registros de inventario</p>
             </CardContent>
           </Card>
         </Link>
@@ -63,10 +66,12 @@ export function Dashboard() {
           <Card className="hover:bg-accent transition-colors cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Stock Bajo</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-semibold text-red-600">{lowStockProducts.length}</div>
+              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-500">
+                {lowStockProducts.length}
+              </div>
               <p className="text-xs text-muted-foreground mt-1">Requieren reposición</p>
             </CardContent>
           </Card>
@@ -118,7 +123,10 @@ export function Dashboard() {
       {lowStockProducts.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Productos con Stock Crítico</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+              Productos con Stock Crítico
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -134,7 +142,7 @@ export function Dashboard() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium text-red-600">
+                    <p className="font-medium text-amber-600 dark:text-amber-500">
                       Stock: {product.currentStock} / {product.minStock}
                     </p>
                     <p className="text-sm text-muted-foreground">Mínimo requerido</p>

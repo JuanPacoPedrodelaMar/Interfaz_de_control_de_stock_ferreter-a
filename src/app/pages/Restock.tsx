@@ -22,13 +22,13 @@ export function Restock() {
     setProducts(storage.getProducts());
   }, []);
 
+  // Stock mínimo se verifica por cada sucursal por separado (cada producto es independiente)
   const lowStockProducts = products
     .filter((p) => p.currentStock <= p.minStock)
     .filter((p) => branchFilter === "all" || p.branch === branchFilter)
     .sort((a, b) => {
-      // Ordenar por gravedad: primero los que tienen menos stock relativo
-      const percentA = a.currentStock / a.minStock;
-      const percentB = b.currentStock / b.minStock;
+      const percentA = a.currentStock / (a.minStock || 1);
+      const percentB = b.currentStock / (b.minStock || 1);
       return percentA - percentB;
     });
 
@@ -42,11 +42,10 @@ export function Restock() {
         <div>
           <h2 className="text-3xl font-semibold text-foreground">Productos a Reponer</h2>
           <p className="text-muted-foreground mt-1">
-            Listado de productos que están por debajo del stock mínimo
+            Listado de productos por debajo del stock mínimo (verificado por sucursal)
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* H6: Reconocimiento - Filtro por sucursal */}
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select value={branchFilter} onValueChange={setBranchFilter}>
@@ -72,12 +71,12 @@ export function Restock() {
         </div>
       </div>
 
-      {/* Resumen */}
+      {/* Resumen alerta - amber en lugar de rojo */}
       {lowStockProducts.length > 0 && (
-        <Card className="border-red-500">
+        <Card className="border-amber-400 dark:border-amber-700">
           <CardHeader>
             <div className="flex items-center gap-3">
-              <AlertTriangle className="h-6 w-6 text-red-600" />
+              <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-500" />
               <CardTitle>
                 {lowStockProducts.length} producto(s) requieren atención inmediata
               </CardTitle>
@@ -86,26 +85,29 @@ export function Restock() {
           <CardContent>
             <p className="text-foreground">
               Estos productos han alcanzado o están por debajo de su stock mínimo configurado.
-              Se recomienda realizar un pedido de reposición lo antes posible para evitar desabastecimiento.
+              El stock mínimo se verifica de forma independiente para cada sucursal.
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* H1: Visibilidad del estado */}
-      {branchFilter !== "all" && lowStockProducts.length === 0 && products.filter(p => p.currentStock <= p.minStock).length > 0 && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">
-              No hay productos con stock bajo en la sucursal "{branchFilter}". Cambia el filtro para ver otros resultados.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {branchFilter !== "all" &&
+        lowStockProducts.length === 0 &&
+        products.filter((p) => p.currentStock <= p.minStock).length > 0 && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">
+                No hay productos con stock bajo en la sucursal "{branchFilter}". Cambia el
+                filtro para ver otros resultados.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
       {/* Lista de productos a reponer */}
       <div className="space-y-4">
-        {lowStockProducts.length === 0 && products.filter(p => p.currentStock <= p.minStock).length === 0 ? (
+        {lowStockProducts.length === 0 &&
+        products.filter((p) => p.currentStock <= p.minStock).length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <Package className="h-12 w-12 text-primary mx-auto mb-4" />
@@ -120,7 +122,9 @@ export function Restock() {
         ) : (
           lowStockProducts.map((product) => {
             const deficit = product.minStock - product.currentStock;
-            const percentage = (product.currentStock / product.minStock) * 100;
+            const percentage = product.minStock > 0
+              ? (product.currentStock / product.minStock) * 100
+              : 0;
             const severity =
               percentage <= 0
                 ? "critical"
@@ -130,11 +134,19 @@ export function Restock() {
                 ? "medium"
                 : "low";
 
-            const severityColors = {
-              critical: "border-red-600",
-              high: "border-red-500",
-              medium: "border-red-400",
-              low: "border-red-300",
+            // Colores amber para stock bajo (distinto al naranja principal)
+            const severityBorderColors = {
+              critical: "border-amber-600 dark:border-amber-600",
+              high: "border-amber-500 dark:border-amber-500",
+              medium: "border-amber-400 dark:border-amber-600",
+              low: "border-amber-300 dark:border-amber-700",
+            };
+
+            const severityBarColors = {
+              critical: "bg-amber-600",
+              high: "bg-amber-500",
+              medium: "bg-amber-400",
+              low: "bg-amber-300",
             };
 
             const severityLabels = {
@@ -144,21 +156,24 @@ export function Restock() {
               low: "REPONER",
             };
 
-            const severityBadgeVariant = {
-              critical: "destructive" as const,
-              high: "destructive" as const,
-              medium: "default" as const,
-              low: "secondary" as const,
+            const severityBadgeColors = {
+              critical: "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400 border-amber-400 dark:border-amber-700",
+              high: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700",
+              medium: "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-500 border-amber-200 dark:border-amber-800",
+              low: "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800",
             };
 
             return (
-              <Card key={product.id} className={severityColors[severity]}>
+              <Card key={product.id} className={severityBorderColors[severity]}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <CardTitle className="text-lg">{product.name}</CardTitle>
-                        <Badge variant={severityBadgeVariant[severity]}>
+                        <Badge
+                          variant="outline"
+                          className={severityBadgeColors[severity]}
+                        >
                           {severityLabels[severity]}
                         </Badge>
                       </div>
@@ -172,7 +187,7 @@ export function Restock() {
                   <div className="grid gap-4 md:grid-cols-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Actual</p>
-                      <p className="text-lg font-semibold text-red-600">
+                      <p className="text-lg font-semibold text-amber-600 dark:text-amber-500">
                         {product.currentStock} unidades
                       </p>
                     </div>
@@ -188,17 +203,15 @@ export function Restock() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Costo Estimado</p>
-                      <p className="text-lg font-semibold text-green-600">
+                      <p className="text-lg font-semibold text-green-600 dark:text-green-400">
                         $
-                        {(product.price * Math.max(deficit, product.minStock)).toLocaleString(
-                          "es-AR",
-                          { minimumFractionDigits: 2 }
-                        )}
+                        {(
+                          product.price * Math.max(deficit, product.minStock)
+                        ).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                       </p>
                     </div>
                   </div>
 
-                  {/* Barra de progreso */}
                   <div className="mt-4">
                     <div className="flex items-center justify-between text-sm mb-1">
                       <span className="text-muted-foreground">Nivel de stock</span>
@@ -206,15 +219,7 @@ export function Restock() {
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className={`h-2 rounded-full transition-all ${
-                          severity === "critical"
-                            ? "bg-red-600"
-                            : severity === "high"
-                            ? "bg-red-500"
-                            : severity === "medium"
-                            ? "bg-red-400"
-                            : "bg-red-300"
-                        }`}
+                        className={`h-2 rounded-full transition-all ${severityBarColors[severity]}`}
                         style={{ width: `${Math.min(percentage, 100)}%` }}
                       />
                     </div>
@@ -250,7 +255,7 @@ export function Restock() {
               </div>
               <div className="flex justify-between items-center pt-2">
                 <span className="text-foreground font-medium">Inversión estimada total:</span>
-                <span className="text-2xl font-semibold text-green-600">
+                <span className="text-2xl font-semibold text-green-600 dark:text-green-400">
                   $
                   {lowStockProducts
                     .reduce(
