@@ -1116,7 +1116,7 @@ export function Movements() {
                             <SelectValue placeholder="Sin descuento" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Sin descuento</SelectItem>
+                            <SelectItem value="none">Sin descuento</SelectItem>
                             {activeDiscounts.map((d) => {
                               const requiresFrequent =
                                 d.appliesTo === "frequent_customers";
