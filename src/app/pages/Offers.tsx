@@ -38,7 +38,8 @@ import { toast } from "sonner";
 import { Navigate } from "react-router";
 
 export function Offers() {
-  const { isAdmin } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+  const isContador = currentUser?.role === "contador";
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
@@ -61,7 +62,7 @@ export function Offers() {
     setDiscounts(storage.getDiscounts());
   }, []);
 
-  if (!isAdmin) {
+  if (!isAdmin && !isContador) {
     return <Navigate to="/" replace />;
   }
 

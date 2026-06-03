@@ -2,8 +2,8 @@ export interface User {
   id: string;
   username: string;
   password: string;
-  role: "admin" | "employee";
-  branch: string; // 'all' for admin
+  role: "admin" | "employee" | "contador" | "warehouse";
+  branch: string; // 'all' for admin and contador, 'Almacén Central' for warehouse
   fullName: string;
 }
 
@@ -89,6 +89,7 @@ export const MOVEMENT_REASONS = {
     "Compra a proveedor",
     "Devolución de cliente",
     "Traslado desde otra sucursal",
+    "Traslado desde almacén",
     "Ajuste de inventario (entrada)",
     "Producción interna",
     "Otro",
@@ -96,6 +97,7 @@ export const MOVEMENT_REASONS = {
   exit: [
     "Venta",
     "Traslado a otra sucursal",
+    "Traslado a almacén",
     "Producto defectuoso",
     "Producto vencido",
     "Merma o pérdida",
@@ -104,3 +106,18 @@ export const MOVEMENT_REASONS = {
     "Otro",
   ],
 };
+
+export interface StockRequest {
+  id: string;
+  productId: string;
+  productName: string;
+  requestedBy: string;
+  requestedByName: string;
+  fromBranch: string;
+  toBranch: string;
+  quantity: number;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}

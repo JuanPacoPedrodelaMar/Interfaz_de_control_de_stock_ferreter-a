@@ -2,8 +2,18 @@ import { useEffect, useState } from "react";
 import { Product } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
+import { useUndo } from "../contexts/UndoContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { AlertTriangle, Package, ShoppingCart, Filter, Building2, Lock } from "lucide-react";
+import {
+  AlertTriangle,
+  Package,
+  ShoppingCart,
+  Filter,
+  Building2,
+  Lock,
+  Send,
+  Warehouse,
+} from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import {
@@ -14,14 +24,17 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { BRANCHES } from "../types";
+import { toast } from "sonner";
 
 export function Restock() {
   const { currentUser } = useAuth();
+  const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
+  const isContador = currentUser?.role === "contador";
   const userBranch = currentUser?.branch;
 
   const [products, setProducts] = useState<Product[]>([]);
-  // Empleados siempre ven solo su sucursal; admin puede elegir
+  // Empleados siempre ven solo su sucursal; admin y contador pueden elegir
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
@@ -29,6 +42,59 @@ export function Restock() {
   useEffect(() => {
     setProducts(storage.getProducts());
   }, []);
+
+  const handleRequestFromWarehouse = (product: Product) => {
+    if (!currentUser) return;
+
+    const warehouseProduct = products.find(
+      (p) => p.id === product.id && p.branch === "Almacén Central"
+    );
+
+    if (!warehouseProduct) {
+      toast.error("Producto no encontrado en el almacén");
+      return;
+    }
+
+    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
+
+    if (warehouseProduct.currentStock < deficit) {
+      toast.error(
+        `Stock insuficiente en almacén. Disponible: ${warehouseProduct.currentStock}, Necesario: ${deficit}`
+      );
+      return;
+    }
+
+    // Create stock request
+    const newRequest = storage.createStockRequest(
+      product.id,
+      product.name,
+      currentUser.id,
+      currentUser.fullName,
+      product.branch,
+      "Almacén Central",
+      deficit
+    );
+
+    pushAction({
+      message: `Solicitud de ${deficit} unidades de ${product.name} enviada al almacén`,
+      undo: () => {
+        const requests = storage.getStockRequests();
+        const filtered = requests.filter((r) => r.id !== newRequest.id);
+        storage.saveStockRequests(filtered);
+        toast.success("Solicitud cancelada");
+      },
+      redo: () => {
+        const requests = storage.getStockRequests();
+        requests.push(newRequest);
+        storage.saveStockRequests(requests);
+        toast.success("Solicitud enviada al almacén");
+      },
+    });
+
+    toast.success(
+      `Solicitud enviada al almacén. Se solicitaron ${deficit} unidades de ${product.name}`
+    );
+  };
 
   // Stock mínimo se verifica por cada sucursal por separado (cada producto es independiente)
   const lowStockProducts = products
@@ -161,7 +227,7 @@ export function Restock() {
           </Card>
         ) : (
           lowStockProducts.map((product) => {
-            const deficit = product.minStock - product.currentStock;
+            const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
             const percentage =
               product.minStock > 0
                 ? (product.currentStock / product.minStock) * 100
@@ -174,6 +240,13 @@ export function Restock() {
                 : percentage <= 100
                 ? "medium"
                 : "low";
+
+            // Find warehouse stock for this product (only show to employees when requesting)
+            const warehouseProduct = products.find(
+              (p) => p.id === product.id && p.branch === "Almacén Central"
+            );
+            const warehouseStock = warehouseProduct?.currentStock || 0;
+            const canRequestFromWarehouse = warehouseStock >= deficit;
 
             const severityBorderColors = {
               critical: "border-amber-600 dark:border-amber-600",
@@ -225,7 +298,7 @@ export function Restock() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                   <div className="grid gap-4 md:grid-cols-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Actual</p>
@@ -238,23 +311,42 @@ export function Restock() {
                       <p className="text-lg font-semibold">{product.minStock} unidades</p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Cantidad Sugerida a Pedir</p>
+                      <p className="text-sm text-muted-foreground">Cantidad Sugerida</p>
                       <p className="text-lg font-semibold text-primary">
-                        {Math.max(deficit, product.minStock)} unidades
+                        {deficit} unidades
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Costo Estimado</p>
                       <p className="text-lg font-semibold text-green-600 dark:text-green-400">
                         $
-                        {(
-                          product.price * Math.max(deficit, product.minStock)
-                        ).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                        {(product.price * deficit).toLocaleString("es-AR", {
+                          minimumFractionDigits: 2,
+                        })}
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-4">
+                  {/* Warehouse stock info (only visible when replenishing) */}
+                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
+                    <div className="border border-border rounded-lg p-3 bg-muted/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Warehouse className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">
+                            Stock en Almacén Central:
+                          </span>
+                        </div>
+                        <span
+                          className={`text-sm font-semibold ${canRequestFromWarehouse ? "text-green-600" : "text-amber-600"}`}
+                        >
+                          {warehouseStock} unidades
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
                     <div className="flex items-center justify-between text-sm mb-1">
                       <span className="text-muted-foreground">Nivel de stock</span>
                       <span className="font-medium">{percentage.toFixed(0)}% del mínimo</span>
@@ -266,6 +358,40 @@ export function Restock() {
                       />
                     </div>
                   </div>
+
+                  {/* Action buttons */}
+                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
+                    <div className="flex gap-2 pt-2">
+                      {canRequestFromWarehouse ? (
+                        <Button
+                          onClick={() => handleRequestFromWarehouse(product)}
+                          className="flex-1"
+                          variant="default"
+                        >
+                          <Send className="h-4 w-4 mr-2" />
+                          Solicitar al Almacén ({deficit} unidades)
+                        </Button>
+                      ) : (
+                        <div className="flex-1 space-y-2">
+                          <Button
+                            onClick={() =>
+                              toast.info(
+                                "Pedido registrado para envío a proveedor. El almacén también será notificado para reabastecer."
+                              )
+                            }
+                            className="w-full"
+                            variant="default"
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-2" />
+                            Pedir a Proveedor ({deficit} unidades)
+                          </Button>
+                          <p className="text-xs text-muted-foreground text-center">
+                            Stock insuficiente en almacén ({warehouseStock} disponibles)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );

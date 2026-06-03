@@ -2,8 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Product, CATEGORIES, BRANCHES } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
-import { useUndoAction } from "../hooks/useUndoAction";
-import { UndoToast } from "../components/UndoToast";
+import { useUndo } from "../contexts/UndoContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -48,10 +47,11 @@ import { Badge } from "../components/ui/badge";
 
 export function Inventory() {
   const { currentUser } = useAuth();
+  const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
+  const isContador = currentUser?.role === "contador";
+  const isWarehouse = currentUser?.role === "warehouse";
   const userBranch = currentUser?.branch;
-
-  const { undoConfig, showUndo, dismiss, executeUndo } = useUndoAction();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -99,10 +99,14 @@ export function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Los empleados solo ven los productos de su sucursal
-  const visibleProducts = isEmployee && userBranch
-    ? products.filter((p) => p.branch === userBranch)
-    : products;
+  // Los empleados y warehouse solo ven los productos de su sucursal
+  // Contadores y admin ven todo
+  const visibleProducts =
+    isEmployee && userBranch
+      ? products.filter((p) => p.branch === userBranch)
+      : isWarehouse && userBranch
+        ? products.filter((p) => p.branch === userBranch)
+        : products;
 
   const filteredProducts = visibleProducts.filter((product) => {
     const matchesSearch =
@@ -293,12 +297,17 @@ export function Inventory() {
       );
       toast.success(`"${formData.name}" actualizado correctamente`);
       const productName = formData.name.trim();
-      showUndo({
+      pushAction({
         message: `"${productName}" actualizado`,
-        onUndo: () => {
+        undo: () => {
           storage.saveProducts(prevProducts);
           setProducts(prevProducts);
           toast.info("Edición deshecha");
+        },
+        redo: () => {
+          storage.saveProducts(updatedProducts);
+          setProducts(updatedProducts);
+          toast.success("Edición rehecha");
         },
       });
     } else {
@@ -315,12 +324,18 @@ export function Inventory() {
       updatedProducts = [...products, newProduct];
       toast.success(`"${formData.name}" agregado al inventario de ${formData.branch}`);
       const productName = formData.name.trim();
-      showUndo({
-        message: `"${productName}" creado en ${formData.branch}`,
-        onUndo: () => {
+      const productBranch = formData.branch;
+      pushAction({
+        message: `"${productName}" creado en ${productBranch}`,
+        undo: () => {
           storage.saveProducts(prevProducts);
           setProducts(prevProducts);
           toast.info("Creación deshecha");
+        },
+        redo: () => {
+          storage.saveProducts(updatedProducts);
+          setProducts(updatedProducts);
+          toast.success("Creación rehecha");
         },
       });
     }
@@ -340,12 +355,17 @@ export function Inventory() {
     setProducts(updatedProducts);
     toast.success(`"${deletedName}" eliminado del inventario`);
     setProductToDelete(null);
-    showUndo({
+    pushAction({
       message: `"${deletedName}" eliminado de ${deletedBranch}`,
-      onUndo: () => {
+      undo: () => {
         storage.saveProducts(prevProducts);
         setProducts(prevProducts);
         toast.info("Eliminación deshecha");
+      },
+      redo: () => {
+        storage.saveProducts(updatedProducts);
+        setProducts(updatedProducts);
+        toast.success("Eliminación rehecha");
       },
     });
   };
@@ -780,14 +800,6 @@ export function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* Toast de deshacer — H3: Control y libertad del usuario */}
-      {undoConfig && (
-        <UndoToast
-          message={undoConfig.message}
-          onUndo={executeUndo}
-          onDismiss={dismiss}
-        />
-      )}
     </div>
   );
 }

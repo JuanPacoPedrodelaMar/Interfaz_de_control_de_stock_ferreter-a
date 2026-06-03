@@ -1,56 +1,63 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
-/** Duración del toast de deshacer en milisegundos */
-export const UNDO_DURATION = 5000;
-
-export interface UndoConfig {
+export interface UndoAction {
   message: string;
-  onUndo: () => void;
+  undo: () => void;
+  redo: () => void;
 }
 
 /**
- * Hook para gestionar la acción de deshacer (undo) con toast temporal.
+ * Hook para gestionar historial de deshacer/rehacer.
  *
  * Retorna:
- * - `undoConfig`: configuración actual del toast (null si no hay acción pendiente)
- * - `showUndo(config)`: muestra el toast con la acción a deshacer
- * - `dismiss()`: cierra el toast sin ejecutar undo
- * - `executeUndo()`: ejecuta el undo y cierra el toast
+ * - `canUndo`: boolean si hay acciones para deshacer
+ * - `canRedo`: boolean si hay acciones para rehacer
+ * - `pushAction(action)`: añade una nueva acción al historial
+ * - `undo()`: deshace la última acción
+ * - `redo()`: rehace la última acción deshecha
  */
 export function useUndoAction() {
-  const [undoConfig, setUndoConfig] = useState<UndoConfig | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoAction[]>([]);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+  const pushAction = useCallback((action: UndoAction) => {
+    setUndoStack((prev) => [...prev, action]);
+    setRedoStack([]); // Clear redo stack when new action is performed
   }, []);
 
-  const showUndo = useCallback(
-    (config: UndoConfig) => {
-      clearTimer();
-      setUndoConfig(config);
-      timerRef.current = setTimeout(() => {
-        setUndoConfig(null);
-      }, UNDO_DURATION);
-    },
-    [clearTimer]
-  );
+  const undo = useCallback(() => {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev;
 
-  const dismiss = useCallback(() => {
-    clearTimer();
-    setUndoConfig(null);
-  }, [clearTimer]);
+      const lastAction = prev[prev.length - 1];
+      const newStack = prev.slice(0, -1);
 
-  const executeUndo = useCallback(() => {
-    clearTimer();
-    setUndoConfig((prev) => {
-      prev?.onUndo();
-      return null;
+      lastAction.undo();
+      setRedoStack((redoPrev) => [...redoPrev, lastAction]);
+
+      return newStack;
     });
-  }, [clearTimer]);
+  }, []);
 
-  return { undoConfig, showUndo, dismiss, executeUndo };
+  const redo = useCallback(() => {
+    setRedoStack((prev) => {
+      if (prev.length === 0) return prev;
+
+      const lastAction = prev[prev.length - 1];
+      const newStack = prev.slice(0, -1);
+
+      lastAction.redo();
+      setUndoStack((undoPrev) => [...undoPrev, lastAction]);
+
+      return newStack;
+    });
+  }, []);
+
+  return {
+    canUndo: undoStack.length > 0,
+    canRedo: redoStack.length > 0,
+    pushAction,
+    undo,
+    redo,
+  };
 }

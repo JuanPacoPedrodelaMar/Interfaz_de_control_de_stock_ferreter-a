@@ -3,8 +3,7 @@ import { useSearchParams } from "react-router";
 import { Product, Movement, MOVEMENT_REASONS, Discount, BRANCHES, Customer } from "../types";
 import { storage, FREQUENT_CUSTOMER_THRESHOLD } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
-import { useUndoAction } from "../hooks/useUndoAction";
-import { UndoToast } from "../components/UndoToast";
+import { useUndo } from "../contexts/UndoContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -56,11 +55,12 @@ import { Separator } from "../components/ui/separator";
 export function Movements() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser } = useAuth();
+  const { pushAction } = useUndo();
 
   const isEmployee = currentUser?.role === "employee";
+  const isContador = currentUser?.role === "contador";
+  const isWarehouse = currentUser?.role === "warehouse";
   const userBranch = currentUser?.branch;
-
-  const { undoConfig, showUndo, dismiss, executeUndo } = useUndoAction();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -347,16 +347,25 @@ export function Movements() {
     );
     setIsDialogOpen(false);
 
-    // Mostrar toast de deshacer — H3: Control y libertad del usuario
     const productName = product.name;
-    showUndo({
+    const updatedProductsCopy = [...updatedProducts];
+    const newMovementsCopy = [...newMovements];
+
+    pushAction({
       message: `${typeLabel}: ${quantity} u. de "${productName}"`,
-      onUndo: () => {
+      undo: () => {
         storage.saveProducts(prevProducts);
         storage.saveMovements(prevMovements);
         setProducts(prevProducts);
         setMovements(prevMovements);
         toast.info("Movimiento deshecho");
+      },
+      redo: () => {
+        storage.saveProducts(updatedProductsCopy);
+        storage.saveMovements(newMovementsCopy);
+        setProducts(updatedProductsCopy);
+        setMovements(newMovementsCopy);
+        toast.success("Movimiento rehecho");
       },
     });
   };
@@ -607,13 +616,20 @@ export function Movements() {
             </PopoverContent>
           </Popover>
 
-          <Button
-            onClick={handleOpenDialog}
-            disabled={visibleProducts.length === 0}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Movimiento
-          </Button>
+          {!isContador && (
+            <Button
+              onClick={handleOpenDialog}
+              disabled={visibleProducts.length === 0}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Movimiento
+            </Button>
+          )}
+          {isContador && (
+            <div className="text-sm text-muted-foreground">
+              Los contadores no pueden registrar movimientos
+            </div>
+          )}
         </div>
       </div>
 
@@ -1253,14 +1269,6 @@ export function Movements() {
           </form>
         </DialogContent>
       </Dialog>
-      {/* Toast de deshacer — H3: Control y libertad del usuario */}
-      {undoConfig && (
-        <UndoToast
-          message={undoConfig.message}
-          onUndo={executeUndo}
-          onDismiss={dismiss}
-        />
-      )}
     </div>
   );
 }
