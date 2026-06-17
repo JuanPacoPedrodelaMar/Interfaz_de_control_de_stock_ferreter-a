@@ -1,0 +1,19 @@
+name: Project Dump
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Mostrar secreto
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "KEY CONFIGURADA"
+          else
+            echo "KEY NO CONFIGURADA"
+          fi
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
