@@ -93,6 +93,7 @@ export function Movements() {
     isFrequentCustomer: false,
     discountId: "",
     isCash: false,
+  });
 
   const [formErrors, setFormErrors] = useState({
     productId: "",
@@ -363,7 +364,7 @@ export function Movements() {
 
     const productName = product.name;
     const updatedProductsCopy = [...updatedProducts];
-    const newMovementsCopy = [...newMovements];
+    const newMovementsCopy = [...updatedMovements];
 
     pushAction({
       message: `${typeLabel}: ${quantity} u. de "${productName}"`,
