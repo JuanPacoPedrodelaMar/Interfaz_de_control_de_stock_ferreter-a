@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Product } from "../types";
+import { useNavigate } from "react-router";
+import { Product, BRANCHES } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { useUndo } from "../contexts/UndoContext";
@@ -12,7 +13,7 @@ import {
   Building2,
   Lock,
   Send,
-  Warehouse,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -23,80 +24,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { BRANCHES } from "../types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 
 export function Restock() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
   const userBranch = currentUser?.branch;
 
+  // Si es contador, redirigir a compras
+  useEffect(() => {
+    if (isContador) {
+      navigate("/purchases", { replace: true });
+    }
+  }, [isContador, navigate]);
+
   const [products, setProducts] = useState<Product[]>([]);
-  // Empleados siempre ven solo su sucursal; admin y contador pueden elegir
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
+
+  // Estado para diálogo de solicitud a otra sucursal
+  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [targetBranch, setTargetBranch] = useState<string>("");
+  const [requestQuantity, setRequestQuantity] = useState<number>(0);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
 
   useEffect(() => {
     setProducts(storage.getProducts());
   }, []);
 
-  const handleRequestFromWarehouse = (product: Product) => {
-    if (!currentUser) return;
-
-    const warehouseProduct = products.find(
-      (p) => p.id === product.id && p.branch === "Almacén Central"
-    );
-
-    if (!warehouseProduct) {
-      toast.error("Producto no encontrado en el almacén");
-      return;
-    }
-
-    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
-
-    if (warehouseProduct.currentStock < deficit) {
-      toast.error(
-        `Stock insuficiente en almacén. Disponible: ${warehouseProduct.currentStock}, Necesario: ${deficit}`
-      );
-      return;
-    }
-
-    // Create stock request
-    const newRequest = storage.createStockRequest(
-      product.id,
-      product.name,
-      currentUser.id,
-      currentUser.fullName,
-      product.branch,
-      "Almacén Central",
-      deficit
-    );
-
-    pushAction({
-      message: `Solicitud de ${deficit} unidades de ${product.name} enviada al almacén`,
-      undo: () => {
-        const requests = storage.getStockRequests();
-        const filtered = requests.filter((r) => r.id !== newRequest.id);
-        storage.saveStockRequests(filtered);
-        toast.success("Solicitud cancelada");
-      },
-      redo: () => {
-        const requests = storage.getStockRequests();
-        requests.push(newRequest);
-        storage.saveStockRequests(requests);
-        toast.success("Solicitud enviada al almacén");
-      },
-    });
-
-    toast.success(
-      `Solicitud enviada al almacén. Se solicitaron ${deficit} unidades de ${product.name}`
-    );
-  };
-
-  // Stock mínimo se verifica por cada sucursal por separado (cada producto es independiente)
   const lowStockProducts = products
     .filter((p) => p.currentStock <= p.minStock)
     .filter((p) => branchFilter === "all" || p.branch === branchFilter)
@@ -109,6 +79,110 @@ export function Restock() {
   const handlePrint = () => {
     window.print();
   };
+
+  const handleOrderToSupplier = (product: Product) => {
+    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
+    // Crear orden de compra
+    const order = storage.createPurchaseOrder(
+      product.id,
+      product.name,
+      product.unit || "Unidades",
+      product.branch,
+      deficit,
+      product.price * deficit,
+      "Proveedor por defecto" // Podría ser seleccionable
+    );
+    toast.success(`Pedido a proveedor registrado: ${deficit} ${product.unit || "unidades"} de "${product.name}"`);
+    pushAction({
+      message: `Pedido a proveedor: ${deficit} ${product.unit || "unidades"} de "${product.name}"`,
+      undo: () => {
+        const orders = storage.getPurchaseOrders();
+        const filtered = orders.filter(o => o.id !== order.id);
+        storage.savePurchaseOrders(filtered);
+        toast.info("Pedido a proveedor cancelado");
+      },
+      redo: () => {
+        const orders = storage.getPurchaseOrders();
+        orders.push(order);
+        storage.savePurchaseOrders(orders);
+        toast.success("Pedido a proveedor rehecho");
+      },
+    });
+  };
+
+  const handleOpenRequestDialog = (product: Product) => {
+    setSelectedProduct(product);
+    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
+    setRequestQuantity(deficit);
+    // Obtener sucursales disponibles (excluyendo la propia)
+    const branches = BRANCHES.filter(b => b !== product.branch);
+    setAvailableBranches(branches);
+    setTargetBranch(branches.length > 0 ? branches[0] : "");
+    setIsRequestDialogOpen(true);
+  };
+
+  const handleSendRequest = () => {
+    if (!selectedProduct || !targetBranch || requestQuantity <= 0) {
+      toast.error("Selecciona una sucursal y una cantidad válida.");
+      return;
+    }
+
+    // Verificar que la sucursal destino tenga stock suficiente
+    const targetProduct = products.find(
+      (p) => p.id === selectedProduct.id && p.branch === targetBranch
+    );
+    if (!targetProduct) {
+      toast.error(`El producto "${selectedProduct.name}" no existe en ${targetBranch}.`);
+      return;
+    }
+    if (targetProduct.currentStock < requestQuantity) {
+      toast.error(
+        `Stock insuficiente en ${targetBranch}. Disponible: ${targetProduct.currentStock} ${targetProduct.unit || "unidades"}.`
+      );
+      return;
+    }
+
+    // Crear solicitud
+    const request = storage.createStockRequest(
+      selectedProduct.id,
+      selectedProduct.name,
+      selectedProduct.unit || "Unidades",
+      currentUser!.id,
+      currentUser!.fullName,
+      selectedProduct.branch, // desde
+      targetBranch, // hacia
+      requestQuantity
+    );
+
+    toast.success(
+      `Solicitud enviada a ${targetBranch}: ${requestQuantity} ${selectedProduct.unit || "unidades"} de "${selectedProduct.name}"`
+    );
+
+    pushAction({
+      message: `Solicitud a ${targetBranch} por ${requestQuantity} ${selectedProduct.unit || "unidades"}`,
+      undo: () => {
+        const requests = storage.getStockRequests();
+        const filtered = requests.filter(r => r.id !== request.id);
+        storage.saveStockRequests(filtered);
+        toast.info("Solicitud cancelada");
+      },
+      redo: () => {
+        const requests = storage.getStockRequests();
+        requests.push(request);
+        storage.saveStockRequests(requests);
+        toast.success("Solicitud rehecha");
+      },
+    });
+
+    setIsRequestDialogOpen(false);
+    setSelectedProduct(null);
+    setTargetBranch("");
+    setRequestQuantity(0);
+  };
+
+  if (isContador) {
+    return null; // o un mensaje de redirección
+  }
 
   return (
     <div className="space-y-6">
@@ -128,7 +202,6 @@ export function Restock() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* El selector de sucursal solo aparece para el admin */}
           {!isEmployee ? (
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
@@ -147,7 +220,6 @@ export function Restock() {
               </Select>
             </div>
           ) : (
-            /* Para empleados: indicador visual de sucursal bloqueada */
             <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-muted-foreground">
               <Building2 className="h-4 w-4" />
               <span>{userBranch}</span>
@@ -164,7 +236,6 @@ export function Restock() {
         </div>
       </div>
 
-      {/* Resumen alerta - amber en lugar de rojo */}
       {lowStockProducts.length > 0 && (
         <Card className="border-amber-400 dark:border-amber-700">
           <CardHeader>
@@ -178,7 +249,7 @@ export function Restock() {
           <CardContent>
             <p className="text-foreground">
               Estos productos han alcanzado o están por debajo de su stock mínimo configurado.
-              El stock mínimo se verifica de forma independiente para cada sucursal.
+              Puedes solicitar stock a otra sucursal o realizar un pedido a proveedor.
             </p>
           </CardContent>
         </Card>
@@ -197,7 +268,6 @@ export function Restock() {
           </Card>
         )}
 
-      {/* Lista de productos a reponer */}
       <div className="space-y-4">
         {lowStockProducts.length === 0 &&
         products.filter((p) => p.currentStock <= p.minStock).length === 0 ? (
@@ -241,13 +311,6 @@ export function Restock() {
                 ? "medium"
                 : "low";
 
-            // Find warehouse stock for this product (only show to employees when requesting)
-            const warehouseProduct = products.find(
-              (p) => p.id === product.id && p.branch === "Almacén Central"
-            );
-            const warehouseStock = warehouseProduct?.currentStock || 0;
-            const canRequestFromWarehouse = warehouseStock >= deficit;
-
             const severityBorderColors = {
               critical: "border-amber-600 dark:border-amber-600",
               high: "border-amber-500 dark:border-amber-500",
@@ -278,6 +341,11 @@ export function Restock() {
               low: "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800",
             };
 
+            // Verificar si hay otra sucursal con stock
+            const otherBranchesWithStock = products.filter(
+              (p) => p.id === product.id && p.branch !== product.branch && p.currentStock > 0
+            );
+
             return (
               <Card key={product.id} className={severityBorderColors[severity]}>
                 <CardHeader>
@@ -294,6 +362,10 @@ export function Restock() {
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         {product.category} • {product.branch || "Sin sucursal"}
+                        {" • "}
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {product.unit || "Unidades"}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -303,17 +375,19 @@ export function Restock() {
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Actual</p>
                       <p className="text-lg font-semibold text-amber-600 dark:text-amber-500">
-                        {product.currentStock} unidades
+                        {product.currentStock} {product.unit || "unidades"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Mínimo</p>
-                      <p className="text-lg font-semibold">{product.minStock} unidades</p>
+                      <p className="text-lg font-semibold">
+                        {product.minStock} {product.unit || "unidades"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Cantidad Sugerida</p>
                       <p className="text-lg font-semibold text-primary">
-                        {deficit} unidades
+                        {deficit} {product.unit || "unidades"}
                       </p>
                     </div>
                     <div>
@@ -326,25 +400,6 @@ export function Restock() {
                       </p>
                     </div>
                   </div>
-
-                  {/* Warehouse stock info (only visible when replenishing) */}
-                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
-                    <div className="border border-border rounded-lg p-3 bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Warehouse className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">
-                            Stock en Almacén Central:
-                          </span>
-                        </div>
-                        <span
-                          className={`text-sm font-semibold ${canRequestFromWarehouse ? "text-green-600" : "text-amber-600"}`}
-                        >
-                          {warehouseStock} unidades
-                        </span>
-                      </div>
-                    </div>
-                  )}
 
                   <div>
                     <div className="flex items-center justify-between text-sm mb-1">
@@ -359,38 +414,32 @@ export function Restock() {
                     </div>
                   </div>
 
-                  {/* Action buttons */}
-                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
-                    <div className="flex gap-2 pt-2">
-                      {canRequestFromWarehouse ? (
-                        <Button
-                          onClick={() => handleRequestFromWarehouse(product)}
-                          className="flex-1"
-                          variant="default"
-                        >
-                          <Send className="h-4 w-4 mr-2" />
-                          Solicitar al Almacén ({deficit} unidades)
-                        </Button>
-                      ) : (
-                        <div className="flex-1 space-y-2">
-                          <Button
-                            onClick={() =>
-                              toast.info(
-                                "Pedido registrado para envío a proveedor. El almacén también será notificado para reabastecer."
-                              )
-                            }
-                            className="w-full"
-                            variant="default"
-                          >
-                            <ShoppingCart className="h-4 w-4 mr-2" />
-                            Pedir a Proveedor ({deficit} unidades)
-                          </Button>
-                          <p className="text-xs text-muted-foreground text-center">
-                            Stock insuficiente en almacén ({warehouseStock} disponibles)
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                  {/* Acciones */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button
+                      onClick={() => handleOrderToSupplier(product)}
+                      variant="default"
+                      className="flex-1 min-w-[120px]"
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Pedir a Proveedor
+                    </Button>
+
+                    {otherBranchesWithStock.length > 0 && (
+                      <Button
+                        onClick={() => handleOpenRequestDialog(product)}
+                        variant="outline"
+                        className="flex-1 min-w-[120px]"
+                      >
+                        <ArrowRightLeft className="h-4 w-4 mr-2" />
+                        Solicitar a otra sucursal
+                      </Button>
+                    )}
+                  </div>
+                  {otherBranchesWithStock.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No hay otras sucursales con stock disponible de este producto.
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -398,6 +447,74 @@ export function Restock() {
           })
         )}
       </div>
+
+      {/* Diálogo para solicitar a otra sucursal */}
+      <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Solicitar a otra sucursal</DialogTitle>
+            <DialogDescription>
+              Selecciona la sucursal de la cual deseas obtener stock y la cantidad necesaria.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Producto</Label>
+              <p className="text-sm font-medium">{selectedProduct?.name}</p>
+              <p className="text-xs text-muted-foreground">
+                Stock actual: {selectedProduct?.currentStock} {selectedProduct?.unit || "unidades"} · 
+                Sucursal: {selectedProduct?.branch}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="targetBranch">Sucursal destino</Label>
+              <Select value={targetBranch} onValueChange={setTargetBranch}>
+                <SelectTrigger id="targetBranch">
+                  <SelectValue placeholder="Selecciona una sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((branch) => {
+                    // Mostrar stock disponible en esa sucursal
+                    const stockInBranch = products.find(
+                      (p) => p.id === selectedProduct?.id && p.branch === branch
+                    )?.currentStock || 0;
+                    return (
+                      <SelectItem key={branch} value={branch}>
+                        {branch} (Stock: {stockInBranch} {selectedProduct?.unit || "unidades"})
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="requestQuantity">Cantidad a solicitar</Label>
+              <Input
+                id="requestQuantity"
+                type="number"
+                min={1}
+                value={requestQuantity}
+                onChange={(e) => setRequestQuantity(parseInt(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Déficit sugerido: {selectedProduct ? Math.max(selectedProduct.minStock - selectedProduct.currentStock, selectedProduct.minStock) : 0}{" "}
+                {selectedProduct?.unit || "unidades"}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRequestDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSendRequest}>
+              <Send className="h-4 w-4 mr-2" />
+              Enviar solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Resumen de costos */}
       {lowStockProducts.length > 0 && (

@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import { Product, Movement } from "../types";
+import { Product, Movement, StockRequest } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { AlertTriangle, Package, TrendingUp, TrendingDown, Building2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Package,
+  TrendingUp,
+  TrendingDown,
+  Building2,
+  AlertCircle,
+  Bell,
+} from "lucide-react";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Link } from "react-router";
 
@@ -11,14 +19,28 @@ export function Dashboard() {
   const { currentUser } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<StockRequest[]>([]);
 
   const isEmployee = currentUser?.role === "employee";
+  const isContador = currentUser?.role === "contador";
+  const isAdmin = currentUser?.role === "admin";
   const userBranch = currentUser?.branch;
 
   useEffect(() => {
     setProducts(storage.getProducts());
     setMovements(storage.getMovements());
-  }, []);
+
+    // Cargar solicitudes pendientes para el empleado (solo si no es contador)
+    if (currentUser && !isContador) {
+      const allRequests = storage.getStockRequests();
+      const pending = allRequests.filter(
+        (r) => r.toBranch === currentUser.branch && r.status === "pending"
+      );
+      setPendingRequests(pending);
+    } else {
+      setPendingRequests([]);
+    }
+  }, [currentUser, isContador]);
 
   // Los empleados solo ven los datos de su sucursal
   const visibleProducts =
@@ -36,6 +58,8 @@ export function Dashboard() {
   const lowStockProducts = visibleProducts.filter(
     (p) => p.currentStock <= p.minStock
   );
+  const productsWithoutPrice = visibleProducts.filter((p) => p.price === 0);
+
   const totalValue = visibleProducts.reduce(
     (sum, p) => sum + p.price * p.currentStock,
     0
@@ -62,8 +86,21 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Alerta stock bajo - en amber, diferente al naranja principal */}
-      {lowStockProducts.length > 0 && (
+      {/* Alerta de solicitudes pendientes (solo para empleados y admin) */}
+      {!isContador && pendingRequests.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-400 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30">
+          <Bell className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-blue-800 dark:text-blue-300">
+            Tienes <strong>{pendingRequests.length} solicitud(es) de stock pendiente(s)</strong> de otras sucursales.
+            <Link to="/requests" className="underline font-medium hover:text-blue-900 dark:hover:text-blue-200 ml-1">
+              Revisar solicitudes
+            </Link>
+          </AlertDescription>
+        </div>
+      )}
+
+      {/* Alerta stock bajo - oculta para contadores */}
+      {!isContador && lowStockProducts.length > 0 && (
         <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
           <AlertDescription className="text-amber-800 dark:text-amber-300">
@@ -75,6 +112,23 @@ export function Dashboard() {
             >
               Ver productos a reponer
             </Link>
+          </AlertDescription>
+        </div>
+      )}
+
+      {/* Alerta productos sin precio (solo admin y contador) */}
+      {(isAdmin || isContador) && productsWithoutPrice.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300">
+            <strong>{productsWithoutPrice.length} producto(s)</strong> no tienen precio definido.{" "}
+            {isContador ? (
+              "Por favor, asigna un precio para habilitarlos a la venta."
+            ) : (
+              <Link to="/inventory" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200">
+                Ver productos sin precio
+              </Link>
+            )}
           </AlertDescription>
         </div>
       )}

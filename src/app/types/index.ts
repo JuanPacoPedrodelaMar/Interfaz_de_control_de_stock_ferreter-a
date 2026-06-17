@@ -2,8 +2,8 @@ export interface User {
   id: string;
   username: string;
   password: string;
-  role: "admin" | "employee" | "contador" | "warehouse";
-  branch: string; // 'all' for admin and contador, 'Almacén Central' for warehouse
+  role: "admin" | "employee" | "contador";
+  branch: string; // 'all' for admin and contador
   fullName: string;
 }
 
@@ -35,6 +35,7 @@ export interface Product {
   price: number;
   currentStock: number;
   minStock: number;
+  unit: string;
   createdAt: string;
 }
 
@@ -48,7 +49,6 @@ export interface Movement {
   reason: string;
   description?: string;
   date: string;
-  // Sale info (when type=exit, reason=Venta)
   customerName?: string;
   customerPhone?: string;
   isFrequentCustomer?: boolean;
@@ -83,7 +83,6 @@ export const BRANCHES = [
   "Sucursal Sur",
   "Sucursal Este",
   "Sucursal Oeste",
-  "Depósito Central",
 ];
 
 export const MOVEMENT_REASONS = {
@@ -91,7 +90,6 @@ export const MOVEMENT_REASONS = {
     "Compra a proveedor",
     "Devolución de cliente",
     "Traslado desde otra sucursal",
-    "Traslado desde almacén",
     "Ajuste de inventario (entrada)",
     "Producción interna",
     "Otro",
@@ -99,7 +97,6 @@ export const MOVEMENT_REASONS = {
   exit: [
     "Venta",
     "Traslado a otra sucursal",
-    "Traslado a almacén",
     "Producto defectuoso",
     "Producto vencido",
     "Merma o pérdida",
@@ -113,6 +110,7 @@ export interface StockRequest {
   id: string;
   productId: string;
   productName: string;
+  productUnit: string;
   requestedBy: string;
   requestedByName: string;
   fromBranch: string;
@@ -122,4 +120,32 @@ export interface StockRequest {
   createdAt: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  resolvedByName?: string;
 }
+
+export interface PurchaseOrder {
+  id: string;
+  productId: string;
+  productName: string;
+  productUnit: string;
+  branch: string;
+  quantity: number;
+  cost: number;
+  provider: string;
+  date: string;
+  status: "pending" | "delivered" | "cancelled";
+  createdAt: string;
+}
+
+export const UNITS = [
+  "Unidades",
+  "Metros",
+  "Kilogramos",
+  "Gramos",
+  "Litros",
+  "Centímetros",
+  "Piezas",
+  "Pares",
+  "Docenas",
+  "Otro",
+];

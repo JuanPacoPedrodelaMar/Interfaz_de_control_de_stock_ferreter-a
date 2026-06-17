@@ -8,6 +8,8 @@ import { Offers } from "./pages/Offers";
 import { Login } from "./pages/Login";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./contexts/AuthContext";
+import { Purchases } from "./pages/Purchases";
+import { Requests } from "./pages/Requests";
 
 function ProtectedLayout() {
   const { isAuthenticated } = useAuth();
@@ -31,6 +33,8 @@ export const router = createBrowserRouter([
       { path: "movements", element: <Movements /> },
       { path: "restock", element: <Restock /> },
       { path: "offers", element: <Offers /> },
+      { path: "purchases", element: <Purchases /> },
+      { path: "requests", element: <Requests /> },
     ],
   },
 ]);

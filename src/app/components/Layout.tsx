@@ -13,6 +13,8 @@ import {
   Building2,
   Undo2,
   Redo2,
+  ShoppingCart,
+  ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "./ui/utils";
 import { useTheme } from "../hooks/useTheme";
@@ -45,6 +47,7 @@ export function Layout() {
   const { currentUser, logout, isAdmin } = useAuth();
   const { canUndo, canRedo, undo, redo } = useUndo();
 
+  const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
 
   const handleLogout = () => {
@@ -74,14 +77,19 @@ export function Layout() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, canRedo, undo, redo]);
 
+  // Navegación según rol
   const navigation = [
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
     { name: "Inventario", path: "/inventory", icon: Package },
     { name: "Movimientos", path: "/movements", icon: ArrowLeftRight },
-    { name: "A Reponer", path: "/restock", icon: AlertTriangle },
-    ...(isAdmin || isContador
-      ? [{ name: "Ofertas", path: "/offers", icon: Tag }]
-      : []),
+    // "A Reponer" visible solo para admin y empleados (no contador)
+    ...(isAdmin || isEmployee ? [{ name: "A Reponer", path: "/restock", icon: AlertTriangle }] : []),
+    // "Solicitudes" visible para admin y empleados (no contador)
+    ...(isAdmin || isEmployee ? [{ name: "Solicitudes", path: "/requests", icon: ArrowRightLeft }] : []),
+    // "Compras" visible para admin y contador
+    ...(isAdmin || isContador ? [{ name: "Compras", path: "/purchases", icon: ShoppingCart }] : []),
+    // "Ofertas" visible para admin y contador
+    ...(isAdmin || isContador ? [{ name: "Ofertas", path: "/offers", icon: Tag }] : []),
   ];
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Product, CATEGORIES, BRANCHES } from "../types";
+import { Product, CATEGORIES, BRANCHES, UNITS } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { useUndo } from "../contexts/UndoContext";
@@ -33,6 +33,8 @@ import {
   Lock,
   TrendingUp,
   TrendingDown,
+  FileSpreadsheet,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,21 +54,26 @@ export function Inventory() {
   const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
+  const isAdmin = currentUser?.role === "admin";
   const userBranch = currentUser?.branch;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  // Empleados comienzan con su sucursal; admin comienza con "all"
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
+  const [showOnlyNoPrice, setShowOnlyNoPrice] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
   const [showBranchCopy, setShowBranchCopy] = useState(false);
   const nameInputRef = useRef<HTMLDivElement>(null);
+
+  // Estado para el diálogo de carga Excel (solo interfaz)
+  const [isExcelDialogOpen, setIsExcelDialogOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -75,6 +82,7 @@ export function Inventory() {
     price: "",
     currentStock: "",
     minStock: "",
+    unit: "Unidades",
   });
 
   const [formErrors, setFormErrors] = useState({
@@ -84,6 +92,7 @@ export function Inventory() {
     price: "",
     currentStock: "",
     minStock: "",
+    unit: "",
   });
 
   useEffect(() => {
@@ -100,8 +109,7 @@ export function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Los empleados solo ven los productos de su sucursal
-  // Contadores y admin ven todo
+  // Filtrar productos según rol y filtros
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
@@ -114,10 +122,20 @@ export function Inventory() {
       (product.branch && product.branch.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory = categoryFilter === "all" || product.category === categoryFilter;
     const matchesBranch = branchFilter === "all" || product.branch === branchFilter;
-    return matchesSearch && matchesCategory && matchesBranch;
+    const matchesNoPrice = !showOnlyNoPrice || product.price === 0;
+    return matchesSearch && matchesCategory && matchesBranch && matchesNoPrice;
   });
 
+  // Productos sin precio (para notificaciones)
+  const productsWithoutPrice = visibleProducts.filter((p) => p.price === 0);
+
   const handleOpenDialog = (product?: Product) => {
+    // Si es contador, solo puede editar precio, y solo si el producto existe (no crear)
+    if (isContador && !product) {
+      toast.info("Los contadores no pueden crear productos. Solo pueden definir precios.");
+      return;
+    }
+
     if (product) {
       setEditingProduct(product);
       setFormData({
@@ -127,20 +145,21 @@ export function Inventory() {
         price: product.price.toString(),
         currentStock: product.currentStock.toString(),
         minStock: product.minStock.toString(),
+        unit: product.unit || "Unidades",
       });
     } else {
       setEditingProduct(null);
       setFormData({
         name: "",
         category: "",
-        // Los empleados siempre crean productos en su propia sucursal
         branch: isEmployee && userBranch ? userBranch : "",
-        price: "",
+        price: "0", // empleados crean con precio 0
         currentStock: "",
         minStock: "",
+        unit: "Unidades",
       });
     }
-    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" });
     setSimilarProducts([]);
     setShowBranchCopy(false);
     setIsDialogOpen(true);
@@ -160,7 +179,6 @@ export function Inventory() {
     }
   };
 
-  // Copiar configuración de un producto existente para agregar a otra sucursal
   const handleCopyToNewBranch = (product: Product) => {
     setSimilarProducts([]);
     setShowBranchCopy(false);
@@ -168,11 +186,11 @@ export function Inventory() {
     setFormData({
       name: product.name,
       category: product.category,
-      // Empleados solo pueden copiar a su propia sucursal
       branch: isEmployee && userBranch ? userBranch : "",
-      price: product.price.toString(),
+      price: "0", // siempre precio 0 para nuevo producto
       currentStock: "0",
       minStock: product.minStock.toString(),
+      unit: product.unit || "Unidades",
     });
     toast.info(`Configuración copiada de "${product.name}". Selecciona la nueva sucursal y ajusta el stock.`);
   };
@@ -187,6 +205,7 @@ export function Inventory() {
       price: product.price.toString(),
       currentStock: product.currentStock.toString(),
       minStock: product.minStock.toString(),
+      unit: product.unit || "Unidades",
     });
     toast.info(`Editando producto existente: "${product.name}" en ${product.branch}`);
   };
@@ -200,17 +219,32 @@ export function Inventory() {
       name: "",
       category: "",
       branch: isEmployee && userBranch ? userBranch : "",
-      price: "",
+      price: "0",
       currentStock: "",
       minStock: "",
+      unit: "Unidades",
     });
-    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" });
   };
 
   const validateForm = () => {
-    const errors = { name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" };
+    const errors = { name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" };
     let isValid = true;
 
+    // Si es contador, solo validamos precio
+    if (isContador) {
+      if (!formData.price) {
+        errors.price = "El precio es obligatorio";
+        isValid = false;
+      } else if (parseFloat(formData.price) <= 0) {
+        errors.price = "El precio debe ser mayor a 0";
+        isValid = false;
+      }
+      setFormErrors(errors);
+      return isValid;
+    }
+
+    // Validación completa para admin y empleado
     if (!formData.name.trim()) {
       errors.name = "El nombre del producto es obligatorio";
       isValid = false;
@@ -229,6 +263,11 @@ export function Inventory() {
       isValid = false;
     }
 
+    if (!formData.unit) {
+      errors.unit = "Debes seleccionar una unidad de medida";
+      isValid = false;
+    }
+
     // Si es nuevo producto, verificar que no exista ya en esa sucursal
     if (!editingProduct && formData.branch) {
       const duplicate = products.find(
@@ -242,11 +281,9 @@ export function Inventory() {
       }
     }
 
-    if (!formData.price) {
-      errors.price = "El precio es obligatorio";
-      isValid = false;
-    } else if (parseFloat(formData.price) <= 0) {
-      errors.price = "El precio debe ser mayor a 0";
+    // Para admin, el precio puede ser cualquier número >= 0 (si se muestra)
+    if (isAdmin && formData.price && parseFloat(formData.price) < 0) {
+      errors.price = "El precio no puede ser negativo";
       isValid = false;
     }
 
@@ -281,21 +318,30 @@ export function Inventory() {
     let updatedProducts: Product[];
 
     if (editingProduct) {
+      // Si es contador, solo actualiza precio
+      let updatedFields: Partial<Product> = {};
+      if (isContador) {
+        updatedFields = {
+          price: parseFloat(formData.price),
+        };
+      } else {
+        updatedFields = {
+          name: formData.name.trim(),
+          category: formData.category,
+          branch: formData.branch,
+          price: parseFloat(formData.price),
+          currentStock: parseInt(formData.currentStock),
+          minStock: parseInt(formData.minStock),
+          unit: formData.unit,
+        };
+      }
       updatedProducts = products.map((p) =>
         p.id === editingProduct.id
-          ? {
-              ...p,
-              name: formData.name.trim(),
-              category: formData.category,
-              branch: formData.branch,
-              price: parseFloat(formData.price),
-              currentStock: parseInt(formData.currentStock),
-              minStock: parseInt(formData.minStock),
-            }
+          ? { ...p, ...updatedFields }
           : p
       );
-      toast.success(`"${formData.name}" actualizado correctamente`);
-      const productName = formData.name.trim();
+      toast.success(`"${editingProduct.name}" actualizado correctamente`);
+      const productName = editingProduct.name;
       pushAction({
         message: `"${productName}" actualizado`,
         undo: () => {
@@ -310,14 +356,16 @@ export function Inventory() {
         },
       });
     } else {
+      // Crear nuevo producto (solo admin o empleado)
       const newProduct: Product = {
         id: Date.now().toString(),
         name: formData.name.trim(),
         category: formData.category,
         branch: formData.branch,
-        price: parseFloat(formData.price),
+        price: parseFloat(formData.price), // empleados siempre 0
         currentStock: parseInt(formData.currentStock),
         minStock: parseInt(formData.minStock),
+        unit: formData.unit,
         createdAt: new Date().toISOString(),
       };
       updatedProducts = [...products, newProduct];
@@ -369,12 +417,27 @@ export function Inventory() {
     });
   };
 
-  // Agrupar productos por nombre para mostrar cuántas sucursales tiene
-  const productNameCounts = products.reduce((acc, p) => {
-    acc[p.name.toLowerCase()] = (acc[p.name.toLowerCase()] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // --- Diálogo de carga Excel (SOLO INTERFAZ) ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      setFile(null);
+      return;
+    }
+    setFile(files[0]);
+    toast.info(`Archivo seleccionado: ${files[0].name}`);
+  };
 
+  const handleImportExcel = () => {
+    if (!file) {
+      toast.error("Selecciona un archivo primero.");
+      return;
+    }
+    // Demostración: solo mostramos un mensaje
+    toast.info("Funcionalidad de importación en desarrollo. Por ahora, solo se muestra la interfaz.");
+  };
+
+  // --- Actualización masiva de precios (solo admin y contador) ---
   const [isPriceUpdateOpen, setIsPriceUpdateOpen] = useState(false);
   const [priceUpdatePercent, setPriceUpdatePercent] = useState("");
   const [priceUpdateDirection, setPriceUpdateDirection] = useState<"increase" | "decrease">("increase");
@@ -425,6 +488,12 @@ export function Inventory() {
     setPriceUpdateDirection("increase");
   };
 
+  // Agrupar productos por nombre para mostrar cuántas sucursales tiene
+  const productNameCounts = products.reduce((acc, p) => {
+    acc[p.name.toLowerCase()] = (acc[p.name.toLowerCase()] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -444,21 +513,106 @@ export function Inventory() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Botón de importación Excel (solo admin y empleados) */}
+          {!isContador && (
+            <Button variant="outline" onClick={() => setIsExcelDialogOpen(true)}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Cargar Excel
+            </Button>
+          )}
+
           {canBulkUpdatePrices && (
             <Button variant="outline" onClick={() => setIsPriceUpdateOpen(true)}>
               <TrendingUp className="h-4 w-4 mr-2" />
               Actualizar precios
             </Button>
           )}
-          <Button onClick={() => handleOpenDialog()}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Producto
-          </Button>
+
+          {/* Botón nuevo producto: solo admin y empleados (no contador) */}
+          {!isContador && (
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Producto
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Dialog actualización masiva de precios */}
+      {/* Alerta de productos sin precio (para admin y contador) */}
+      {(isAdmin || isContador) && productsWithoutPrice.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="text-amber-800 dark:text-amber-300">
+            <strong>{productsWithoutPrice.length} producto(s)</strong> no tienen precio definido.{" "}
+            {isContador ? (
+              "Por favor, asigna un precio a estos productos para habilitarlos para la venta."
+            ) : (
+              <span>
+                Los contadores deben definir el precio.{" "}
+                <button
+                  onClick={() => setShowOnlyNoPrice(true)}
+                  className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
+                >
+                  Ver productos sin precio
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo de carga Excel (SOLO INTERFAZ) */}
+      <Dialog open={isExcelDialogOpen} onOpenChange={setIsExcelDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Cargar productos desde Excel</DialogTitle>
+            <DialogDescription>
+              Sube un archivo Excel (.xlsx, .xls) con los datos de los productos.
+              Los productos se crearán con <strong>precio 0</strong> (deberá ser definido por un contador).
+              <br />
+              <span className="text-amber-600 dark:text-amber-400">⚠️ Funcionalidad en demostración — la importación real no está activa.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-muted/50 rounded-lg border border-border">
+              <h4 className="font-medium mb-2">Formato esperado de columnas:</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="font-mono bg-background px-1 rounded">nombre</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">categoría</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">sucursal</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">stock_actual</span> <span className="text-muted-foreground">(obligatorio, número)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">stock_mínimo</span> <span className="text-muted-foreground">(obligatorio, número)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">unidad</span> <span className="text-muted-foreground">(opcional, por defecto "Unidades")</span></div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Las categorías y sucursales deben coincidir con las definidas en el sistema.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="excel-file">Seleccionar archivo</Label>
+              <Input
+                id="excel-file"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsExcelDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleImportExcel} disabled={!file}>
+                Importar productos (demo)
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de actualización masiva de precios */}
       <Dialog open={isPriceUpdateOpen} onOpenChange={setIsPriceUpdateOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -556,7 +710,7 @@ export function Inventory() {
       {/* Filtros */}
       <Card>
         <CardContent className="pt-6">
-          <div className={`grid gap-4 ${isEmployee ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+          <div className={`grid gap-4 ${isEmployee || isContador ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -581,8 +735,8 @@ export function Inventory() {
               </SelectContent>
             </Select>
 
-            {/* El filtro de sucursal solo aparece para el admin */}
-            {!isEmployee && (
+            {/* Filtro de sucursal solo para admin (y contador? contador ve todas) */}
+            {!isEmployee && !isContador && (
               <Select value={branchFilter} onValueChange={setBranchFilter}>
                 <SelectTrigger aria-label="Filtrar por sucursal">
                   <SelectValue placeholder="Filtrar por sucursal" />
@@ -598,7 +752,24 @@ export function Inventory() {
               </Select>
             )}
           </div>
-          {(searchTerm || categoryFilter !== "all" || (!isEmployee && branchFilter !== "all")) && (
+          {/* Filtro adicional para "Sin precio" (admin y contador) */}
+          {(isAdmin || isContador) && (
+            <div className="flex items-center gap-3 mt-3">
+              <Button
+                variant={showOnlyNoPrice ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowOnlyNoPrice(!showOnlyNoPrice)}
+              >
+                {showOnlyNoPrice ? "Mostrar todos" : "Mostrar sin precio"}
+                {productsWithoutPrice.length > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {productsWithoutPrice.length}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+          )}
+          {(searchTerm || categoryFilter !== "all" || (!isEmployee && !isContador && branchFilter !== "all") || showOnlyNoPrice) && (
             <p className="text-sm text-muted-foreground mt-3">
               Mostrando {filteredProducts.length} de {visibleProducts.length} registros
             </p>
@@ -622,6 +793,10 @@ export function Inventory() {
           filteredProducts.map((product) => {
             const isLowStock = product.currentStock <= product.minStock;
             const branchCount = productNameCounts[product.name.toLowerCase()] || 1;
+            const hasPrice = product.price > 0;
+            const canEditPrice = isAdmin || isContador;
+            const canEditFull = isAdmin || isEmployee;
+
             return (
               <Card
                 key={product.id}
@@ -632,6 +807,11 @@ export function Inventory() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-lg">{product.name}</CardTitle>
+                        {!hasPrice && (
+                          <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                            Sin precio
+                          </Badge>
+                        )}
                         {isLowStock && (
                           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
                         )}
@@ -647,34 +827,44 @@ export function Inventory() {
                         <span className="font-medium text-foreground/80">
                           {product.branch || "Sin sucursal"}
                         </span>
+                        {" • "}
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {product.unit || "Unidades"}
+                        </span>
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenDialog(product)}
-                        aria-label={`Editar ${product.name}`}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setProductToDelete(product)}
-                        aria-label={`Eliminar ${product.name}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {/* Botón editar: si es contador, solo puede editar precio; admin y empleado pueden editar todo */}
+                      {(canEditFull || canEditPrice) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenDialog(product)}
+                          aria-label={`Editar ${product.name}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* Eliminar solo admin y empleado (no contador) */}
+                      {!isContador && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setProductToDelete(product)}
+                          aria-label={`Eliminar ${product.name}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Precio</p>
-                      <p className="text-lg font-semibold">
-                        ${product.price.toLocaleString("es-AR")}
+                      <p className={`text-lg font-semibold ${hasPrice ? "" : "text-muted-foreground"}`}>
+                        {hasPrice ? `$${product.price.toLocaleString("es-AR")}` : "Sin asignar"}
                       </p>
                     </div>
                     <div>
@@ -684,17 +874,23 @@ export function Inventory() {
                           isLowStock ? "text-amber-600 dark:text-amber-500" : ""
                         }`}
                       >
-                        {product.currentStock} unidades
+                        {product.currentStock} {product.unit || "u"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Mínimo</p>
-                      <p className="text-lg font-semibold">{product.minStock} unidades</p>
+                      <p className="text-lg font-semibold">{product.minStock} {product.unit || "u"}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Unidad</p>
+                      <p className="text-lg font-semibold">{product.unit || "Unidades"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Valor Total</p>
                       <p className="text-lg font-semibold text-primary">
-                        ${(product.price * product.currentStock).toLocaleString("es-AR")}
+                        {hasPrice
+                          ? `$${(product.price * product.currentStock).toLocaleString("es-AR")}`
+                          : "—"}
                       </p>
                     </div>
                   </div>
@@ -702,6 +898,13 @@ export function Inventory() {
                     <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-md">
                       <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
                         ⚠️ Stock bajo en {product.branch}: Este producto requiere reposición
+                      </p>
+                    </div>
+                  )}
+                  {!hasPrice && (isAdmin || isContador) && (
+                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-md">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                        💰 Este producto no tiene precio definido. Asigna un precio para habilitarlo para la venta.
                       </p>
                     </div>
                   )}
@@ -721,145 +924,212 @@ export function Inventory() {
             </DialogTitle>
             <DialogDescription>
               {editingProduct
-                ? "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
+                ? isContador
+                  ? "Define el precio del producto. Los demás campos no son editables para contadores."
+                  : "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
                 : isEmployee
-                ? `Los productos se agregarán al inventario de ${userBranch}.`
+                ? `Los productos se agregarán al inventario de ${userBranch} sin precio (deberá ser definido por un contador).`
                 : "Completa los campos. El mismo producto puede existir en distintas sucursales con stock separado."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
-              {/* Nombre */}
-              <div className="space-y-2">
-                <Label htmlFor="name">
-                  Nombre del Producto <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative" ref={nameInputRef}>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="Ingrese nombre del producto"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.name}
-                  />
-                  {/* Panel de productos similares */}
-                  {similarProducts.length > 0 && !editingProduct && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
-                      <div className="p-2 border-b border-border bg-muted/50">
-                        <p className="text-xs text-muted-foreground font-medium">
-                          Este producto existe en otras sucursales — ¿qué deseas hacer?
-                        </p>
-                      </div>
-                      {similarProducts.map((product) => (
-                        <div
-                          key={product.id}
-                          className="p-3 border-b border-border last:border-b-0"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <p className="font-medium text-sm text-foreground">
-                                {product.name}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {product.branch} • Stock: {product.currentStock}
-                              </p>
-                            </div>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleCopyToNewBranch(product)}
-                                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition-colors"
-                                title="Agregar a nueva sucursal con esta configuración"
-                              >
-                                <Copy className="h-3 w-3" />
-                                Nueva sucursal
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSelectExistingProduct(product)}
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors"
-                              >
-                                <Edit className="h-3 w-3" />
-                                Editar
-                              </button>
-                            </div>
+              {/* Nombre - solo visible para admin y empleado (no contador) */}
+              {!isContador && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">
+                      Nombre del Producto <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="relative" ref={nameInputRef}>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => handleNameChange(e.target.value)}
+                        placeholder="Ingrese nombre del producto"
+                        aria-required="true"
+                        aria-invalid={!!formErrors.name}
+                      />
+                      {/* Panel de productos similares */}
+                      {similarProducts.length > 0 && !editingProduct && (
+                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
+                          <div className="p-2 border-b border-border bg-muted/50">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              Este producto existe en otras sucursales — ¿qué deseas hacer?
+                            </p>
                           </div>
+                          {similarProducts.map((product) => (
+                            <div
+                              key={product.id}
+                              className="p-3 border-b border-border last:border-b-0"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm text-foreground">
+                                    {product.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {product.branch} • Stock: {product.currentStock}
+                                  </p>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyToNewBranch(product)}
+                                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition-colors"
+                                    title="Agregar a nueva sucursal con esta configuración"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                    Nueva sucursal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectExistingProduct(product)}
+                                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                    Editar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
-                {formErrors.name && (
-                  <p className="text-sm text-destructive">{formErrors.name}</p>
-                )}
-              </div>
-
-              {/* Categoría */}
-              <div className="space-y-2">
-                <Label htmlFor="category">
-                  Categoría <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
-                  <SelectTrigger id="category">
-                    <SelectValue placeholder="Selecciona una categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formErrors.category && (
-                  <p className="text-sm text-destructive">{formErrors.category}</p>
-                )}
-              </div>
-
-              {/* Sucursal: bloqueada para empleados, editable para admin */}
-              <div className="space-y-2">
-                <Label htmlFor="branch">
-                  Sucursal <span className="text-destructive">*</span>
-                </Label>
-                {isEmployee ? (
-                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-foreground">
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="flex-1">{userBranch}</span>
-                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {formErrors.name && (
+                      <p className="text-sm text-destructive">{formErrors.name}</p>
+                    )}
                   </div>
-                ) : (
-                  <Select
-                    value={formData.branch}
-                    onValueChange={(value) => setFormData({ ...formData, branch: value })}
-                  >
-                    <SelectTrigger id="branch">
-                      <SelectValue placeholder="Selecciona una sucursal" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BRANCHES.map((branch) => (
-                        <SelectItem key={branch} value={branch}>
-                          {branch}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {formErrors.branch && (
-                  <p className="text-sm text-destructive">{formErrors.branch}</p>
-                )}
-                {showBranchCopy && formData.branch && !editingProduct && (
-                  <p className="text-xs text-muted-foreground">
-                    Se creará un registro independiente para esta sucursal con su propio stock.
-                  </p>
-                )}
-              </div>
 
-              {/* Precio y Stock */}
-              <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="category">
+                      Categoría <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.category}
+                      onValueChange={(value) => setFormData({ ...formData, category: value })}
+                    >
+                      <SelectTrigger id="category">
+                        <SelectValue placeholder="Selecciona una categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formErrors.category && (
+                      <p className="text-sm text-destructive">{formErrors.category}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="branch">
+                      Sucursal <span className="text-destructive">*</span>
+                    </Label>
+                    {isEmployee ? (
+                      <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-foreground">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="flex-1">{userBranch}</span>
+                        <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <Select
+                        value={formData.branch}
+                        onValueChange={(value) => setFormData({ ...formData, branch: value })}
+                      >
+                        <SelectTrigger id="branch">
+                          <SelectValue placeholder="Selecciona una sucursal" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BRANCHES.map((branch) => (
+                            <SelectItem key={branch} value={branch}>
+                              {branch}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {formErrors.branch && (
+                      <p className="text-sm text-destructive">{formErrors.branch}</p>
+                    )}
+                    {showBranchCopy && formData.branch && !editingProduct && (
+                      <p className="text-xs text-muted-foreground">
+                        Se creará un registro independiente para esta sucursal con su propio stock.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="unit">
+                      Unidad de medida <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.unit}
+                      onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                    >
+                      <SelectTrigger id="unit">
+                        <SelectValue placeholder="Selecciona una unidad" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNITS.map((unit) => (
+                          <SelectItem key={unit} value={unit}>
+                            {unit}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formErrors.unit && (
+                      <p className="text-sm text-destructive">{formErrors.unit}</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="currentStock">
+                        Stock Actual <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="currentStock"
+                        type="number"
+                        min="0"
+                        value={formData.currentStock}
+                        onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+                        placeholder="0"
+                      />
+                      {formErrors.currentStock && (
+                        <p className="text-sm text-destructive">{formErrors.currentStock}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="minStock">
+                        Stock Mínimo <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="minStock"
+                        type="number"
+                        min="0"
+                        value={formData.minStock}
+                        onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                        placeholder="0"
+                      />
+                      {formErrors.minStock && (
+                        <p className="text-sm text-destructive">{formErrors.minStock}</p>
+                      )}
+                      <p className="text-sm text-muted-foreground">
+                        Alerta cuando el stock sea igual o menor a este valor (por sucursal)
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Precio - solo visible para admin y contador */}
+              {(isAdmin || isContador) && (
                 <div className="space-y-2">
                   <Label htmlFor="price">
                     Precio ($) <span className="text-destructive">*</span>
@@ -876,45 +1146,22 @@ export function Inventory() {
                   {formErrors.price && (
                     <p className="text-sm text-destructive">{formErrors.price}</p>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="currentStock">
-                    Stock Actual <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="currentStock"
-                    type="number"
-                    min="0"
-                    value={formData.currentStock}
-                    onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
-                    placeholder="0"
-                  />
-                  {formErrors.currentStock && (
-                    <p className="text-sm text-destructive">{formErrors.currentStock}</p>
+                  {isContador && (
+                    <p className="text-sm text-muted-foreground">
+                      Asigna el precio para habilitar el producto a la venta.
+                    </p>
                   )}
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="minStock">
-                  Stock Mínimo <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="minStock"
-                  type="number"
-                  min="0"
-                  value={formData.minStock}
-                  onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
-                  placeholder="0"
-                />
-                {formErrors.minStock && (
-                  <p className="text-sm text-destructive">{formErrors.minStock}</p>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  Alerta cuando el stock sea igual o menor a este valor (por sucursal)
-                </p>
-              </div>
+              {/* Si es contador y está editando, mostramos el nombre y unidad como texto informativo */}
+              {isContador && editingProduct && (
+                <div className="p-3 bg-muted/50 rounded-md text-sm space-y-1">
+                  <p><span className="text-muted-foreground">Producto:</span> {editingProduct.name}</p>
+                  <p><span className="text-muted-foreground">Sucursal:</span> {editingProduct.branch}</p>
+                  <p><span className="text-muted-foreground">Unidad:</span> {editingProduct.unit || "Unidades"}</p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog}>

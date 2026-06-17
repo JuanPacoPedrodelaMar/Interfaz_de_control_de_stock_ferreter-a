@@ -1,4 +1,4 @@
-import { Product, Movement, User, Customer, Discount } from "../types";
+import { Product, Movement, User, Customer, Discount, StockRequest, PurchaseOrder } from "../types";
 
 const PRODUCTS_KEY = "ferreteria_products";
 const MOVEMENTS_KEY = "ferreteria_movements";
@@ -6,8 +6,9 @@ const USERS_KEY = "ferreteria_users";
 const CUSTOMERS_KEY = "ferreteria_customers";
 const DISCOUNTS_KEY = "ferreteria_discounts";
 const SESSION_KEY = "ferreteria_session";
+const STOCK_REQUESTS_KEY = "ferreteria_stock_requests";
+const PURCHASE_ORDERS_KEY = "ferreteria_purchase_orders";
 
-// Umbral de compras para que un cliente sea considerado frecuente
 export const FREQUENT_CUSTOMER_THRESHOLD = 3;
 
 const DEFAULT_USERS: User[] = [
@@ -87,7 +88,13 @@ export const storage = {
   // Products
   getProducts(): Product[] {
     const data = localStorage.getItem(PRODUCTS_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    let products: Product[] = JSON.parse(data);
+    products = products.map(p => ({
+      ...p,
+      unit: p.unit || "Unidades",
+    }));
+    return products;
   },
   saveProducts(products: Product[]): void {
     localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
@@ -124,10 +131,6 @@ export const storage = {
     localStorage.setItem(CUSTOMERS_KEY, JSON.stringify(customers));
   },
 
-  /**
-   * Busca un cliente por nombre (case-insensitive, coincidencia exacta).
-   * Retorna el cliente si existe, undefined si no.
-   */
   findCustomerByName(name: string): Customer | undefined {
     if (!name.trim()) return undefined;
     const customers = this.getCustomers();
@@ -135,12 +138,6 @@ export const storage = {
     return customers.find((c) => c.name.trim().toLowerCase() === normalized);
   },
 
-  /**
-   * Registra una compra para un cliente. Si no existe lo crea.
-   * Incrementa su contador de compras y lo marca como frecuente
-   * cuando alcanza FREQUENT_CUSTOMER_THRESHOLD.
-   * Retorna el cliente actualizado.
-   */
   updateCustomerFromSale(name: string, phone?: string): Customer {
     const customers = this.getCustomers();
     const normalized = name.trim().toLowerCase();
@@ -157,7 +154,6 @@ export const storage = {
         ...existing,
         purchaseCount: newCount,
         isFrequent: newCount >= FREQUENT_CUSTOMER_THRESHOLD,
-        // Actualizar teléfono si no tenía uno y ahora se provee
         ...(phone && phone.trim() && !existing.phone
           ? { phone: phone.trim() }
           : {}),
@@ -187,7 +183,6 @@ export const storage = {
       return DEFAULT_DISCOUNTS;
     }
     const discounts: Discount[] = JSON.parse(data);
-    // Migración: asegurar que el descuento de efectivo existe
     if (!discounts.find((d) => d.id === "d-cash")) {
       const withCash = [
         ...discounts,
@@ -214,4 +209,96 @@ export const storage = {
     localStorage.removeItem(SESSION_KEY);
   },
 
+  // Stock Requests (entre sucursales)
+  getStockRequests(): StockRequest[] {
+    const data = localStorage.getItem(STOCK_REQUESTS_KEY);
+    return data ? JSON.parse(data) : [];
+  },
+  saveStockRequests(requests: StockRequest[]): void {
+    localStorage.setItem(STOCK_REQUESTS_KEY, JSON.stringify(requests));
+  },
+  createStockRequest(
+    productId: string,
+    productName: string,
+    productUnit: string,
+    requestedBy: string,
+    requestedByName: string,
+    fromBranch: string,
+    toBranch: string,
+    quantity: number
+  ): StockRequest {
+    const newRequest: StockRequest = {
+      id: Date.now().toString(),
+      productId,
+      productName,
+      productUnit,
+      requestedBy,
+      requestedByName,
+      fromBranch,
+      toBranch,
+      quantity,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    const requests = this.getStockRequests();
+    requests.push(newRequest);
+    this.saveStockRequests(requests);
+    return newRequest;
+  },
+  updateStockRequestStatus(
+    requestId: string,
+    status: "approved" | "rejected",
+    resolvedBy: string,
+    resolvedByName: string
+  ): StockRequest | null {
+    const requests = this.getStockRequests();
+    const index = requests.findIndex(r => r.id === requestId);
+    if (index === -1) return null;
+    const updated = {
+      ...requests[index],
+      status,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy,
+      resolvedByName,
+    };
+    requests[index] = updated;
+    this.saveStockRequests(requests);
+    return updated;
+  },
+
+  // Purchase Orders (compras a proveedores)
+  getPurchaseOrders(): PurchaseOrder[] {
+    const data = localStorage.getItem(PURCHASE_ORDERS_KEY);
+    return data ? JSON.parse(data) : [];
+  },
+  savePurchaseOrders(orders: PurchaseOrder[]): void {
+    localStorage.setItem(PURCHASE_ORDERS_KEY, JSON.stringify(orders));
+  },
+  createPurchaseOrder(
+    productId: string,
+    productName: string,
+    productUnit: string,
+    branch: string,
+    quantity: number,
+    cost: number,
+    provider: string
+  ): PurchaseOrder {
+    const newOrder: PurchaseOrder = {
+      id: Date.now().toString(),
+      productId,
+      productName,
+      productUnit,
+      branch,
+      quantity,
+      cost,
+      provider,
+      date: new Date().toISOString().split("T")[0],
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    const orders = this.getPurchaseOrders();
+    orders.push(newOrder);
+    this.savePurchaseOrders(orders);
+    return newOrder;
+  },
 };

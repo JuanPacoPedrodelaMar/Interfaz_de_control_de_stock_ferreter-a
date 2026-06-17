@@ -59,7 +59,6 @@ export function Movements() {
 
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
-  const isWarehouse = currentUser?.role === "warehouse";
   const userBranch = currentUser?.branch;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -68,16 +67,12 @@ export function Movements() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
-  // Estado para auto-detección de cliente frecuente
   const [foundCustomer, setFoundCustomer] = useState<Customer | null>(null);
 
-  // Filtros activos
   const filterType = searchParams.get("filter") as "entry" | "exit" | null;
-  // Empleados comienzan con su sucursal filtrada; admin ve todo
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
-  // Filtro por cliente (nombre parcial o completo)
   const [customerFilter, setCustomerFilter] = useState<string>("");
 
   const [formData, setFormData] = useState({
@@ -87,7 +82,6 @@ export function Movements() {
     reason: "",
     description: "",
     date: new Date().toISOString().split("T")[0],
-    // Sale fields
     customerName: "",
     customerPhone: "",
     isFrequentCustomer: false,
@@ -144,42 +138,42 @@ export function Movements() {
   const selectedDiscount = discounts.find((d) => d.id === formData.discountId);
   const cashDiscount = discounts.find((d) => d.id === "d-cash" && d.isActive);
 
-  // Cálculo de precios para venta
+  // Calcular precios solo si el producto tiene precio > 0
   const unitPrice = selectedProduct?.price || 0;
+  const hasValidPrice = selectedProduct ? selectedProduct.price > 0 : false;
   const qty = parseInt(formData.quantity) || 0;
-  let discountAmount = 0;
-  if (selectedDiscount && qty > 0) {
-    if (selectedDiscount.type === "percentage") {
-      discountAmount = unitPrice * (selectedDiscount.value / 100);
-    } else {
-      discountAmount = selectedDiscount.value;
-    }
-  }
-  // Descuento adicional por pago en efectivo (se apila)
-  const priceAfterDiscount = Math.max(0, unitPrice - discountAmount);
-  let cashDiscountAmount = 0;
-  if (formData.isCash && cashDiscount && qty > 0) {
-    if (cashDiscount.type === "percentage") {
-      cashDiscountAmount = priceAfterDiscount * (cashDiscount.value / 100);
-    } else {
-      cashDiscountAmount = cashDiscount.value;
-    }
-  }
-  const finalUnitPrice = Math.max(0, priceAfterDiscount - cashDiscountAmount);
-  const totalAmount = finalUnitPrice * qty;
 
-  /**
-   * Cuando el empleado escribe el nombre del cliente:
-   * - Busca en la base de datos de clientes
-   * - Si es frecuente, auto-chequea el checkbox y selecciona el descuento frecuente
-   * - Muestra información sobre compras anteriores
-   */
+  let discountAmount = 0;
+  let priceAfterDiscount = 0;
+  let cashDiscountAmount = 0;
+  let finalUnitPrice = 0;
+  let totalAmount = 0;
+
+  if (hasValidPrice) {
+    if (selectedDiscount && qty > 0) {
+      if (selectedDiscount.type === "percentage") {
+        discountAmount = unitPrice * (selectedDiscount.value / 100);
+      } else {
+        discountAmount = selectedDiscount.value;
+      }
+    }
+    priceAfterDiscount = Math.max(0, unitPrice - discountAmount);
+    if (formData.isCash && cashDiscount && qty > 0) {
+      if (cashDiscount.type === "percentage") {
+        cashDiscountAmount = priceAfterDiscount * (cashDiscount.value / 100);
+      } else {
+        cashDiscountAmount = cashDiscount.value;
+      }
+    }
+    finalUnitPrice = Math.max(0, priceAfterDiscount - cashDiscountAmount);
+    totalAmount = finalUnitPrice * qty;
+  }
+
   const handleCustomerNameChange = (name: string) => {
     const found = storage.findCustomerByName(name);
     setFoundCustomer(found || null);
 
     if (found?.isFrequent) {
-      // Auto-detectar cliente frecuente y aplicar descuento automáticamente
       const frequentDiscount = activeDiscounts.find(
         (d) => d.appliesTo === "frequent_customers"
       );
@@ -187,15 +181,12 @@ export function Movements() {
         ...prev,
         customerName: name,
         isFrequentCustomer: true,
-        // Solo auto-aplica el descuento frecuente si no hay uno seleccionado ya
         discountId: prev.discountId || frequentDiscount?.id || "",
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
         customerName: name,
-        // Si el cliente no es frecuente, no modificar el estado del checkbox
-        // (el usuario podría haberlo marcado manualmente)
       }));
     }
   };
@@ -253,6 +244,15 @@ export function Movements() {
       isValid = false;
     }
 
+    // Validación específica para ventas: el producto debe tener precio definido
+    if (isSale && selectedProduct && selectedProduct.price === 0) {
+      errors.productId = "No se puede vender un producto sin precio definido. Asigna un precio primero.";
+      toast.error("Este producto no tiene precio definido. Un contador debe asignarle un precio antes de poder venderlo.", {
+        duration: 5000,
+      });
+      isValid = false;
+    }
+
     if (
       isSale &&
       selectedDiscount?.appliesTo === "frequent_customers" &&
@@ -281,9 +281,13 @@ export function Movements() {
       return;
     }
 
-    const quantity = parseInt(formData.quantity);
+    // Si es venta y el producto no tiene precio, no debería llegar aquí, pero por seguridad
+    if (isSale && product.price === 0) {
+      toast.error("No se puede vender un producto sin precio.");
+      return;
+    }
 
-    // Capturamos el estado anterior para poder deshacer
+    const quantity = parseInt(formData.quantity);
     const prevProducts = [...products];
     const prevMovements = [...movements];
 
@@ -316,7 +320,6 @@ export function Movements() {
       }),
     };
 
-    // Actualizar el stock del producto
     const updatedProducts = products.map((p) =>
       p.id === product.id
         ? {
@@ -335,14 +338,11 @@ export function Movements() {
     setProducts(updatedProducts);
     setMovements(updatedMovements);
 
-    // Si es una venta con nombre de cliente, actualizar registro de clientes
     if (isSale && formData.customerName.trim()) {
       const updatedCustomer = storage.updateCustomerFromSale(
         formData.customerName.trim(),
         formData.customerPhone.trim() || undefined
       );
-
-      // Notificar si el cliente acaba de alcanzar el umbral de cliente frecuente
       if (
         updatedCustomer.isFrequent &&
         updatedCustomer.purchaseCount === FREQUENT_CUSTOMER_THRESHOLD
@@ -385,14 +385,19 @@ export function Movements() {
     });
   };
 
-  // Productos visibles según rol:
-  // Empleados solo ven productos de su sucursal en el formulario
+  // Productos visibles según rol, y además filtramos los que tienen precio para ventas
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
       : products;
 
-  // Filtrar movimientos
+  // Para el select, mostramos todos pero marcamos los que no tienen precio
+  const productOptions = visibleProducts.map((p) => ({
+    ...p,
+    hasPrice: p.price > 0,
+    disabledForSale: p.price === 0,
+  }));
+
   const filteredMovements = movements
     .filter((m) => {
       const matchesType = !filterType || m.type === filterType;
@@ -455,7 +460,6 @@ export function Movements() {
                 </button>
               </Badge>
             )}
-            {/* Badge de sucursal solo visible para admin */}
             {!isEmployee && branchFilter !== "all" && (
               <Badge
                 variant="secondary"
@@ -472,7 +476,6 @@ export function Movements() {
                 </button>
               </Badge>
             )}
-            {/* Badge de filtro por cliente */}
             {customerFilter && (
               <Badge
                 variant="secondary"
@@ -489,7 +492,6 @@ export function Movements() {
                 </button>
               </Badge>
             )}
-            {/* Indicador de sucursal para empleados */}
             {isEmployee && userBranch && (
               <Badge
                 variant="secondary"
@@ -506,7 +508,6 @@ export function Movements() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Botón de filtros */}
           <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" className="relative">
@@ -522,8 +523,6 @@ export function Movements() {
             <PopoverContent className="w-72 p-4" align="end">
               <div className="space-y-4">
                 <h4 className="font-medium text-sm">Filtrar movimientos</h4>
-
-                {/* Filtro por tipo */}
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Por tipo</Label>
                   <div className="flex gap-2">
@@ -553,8 +552,6 @@ export function Movements() {
                     </Button>
                   </div>
                 </div>
-
-                {/* Filtro por sucursal: solo visible para admin */}
                 {!isEmployee && (
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">Por sucursal</Label>
@@ -579,12 +576,8 @@ export function Movements() {
                     </Select>
                   </div>
                 )}
-
-                {/* ── NUEVO: Filtro por cliente ── */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Por cliente
-                  </Label>
+                  <Label className="text-xs text-muted-foreground">Por cliente</Label>
                   <div className="relative">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
@@ -608,7 +601,6 @@ export function Movements() {
                     </p>
                   )}
                 </div>
-
                 {(filterType ||
                   (!isEmployee && branchFilter !== "all") ||
                   customerFilter) && (
@@ -659,7 +651,6 @@ export function Movements() {
         </Alert>
       )}
 
-      {/* Lista de movimientos */}
       <div className="space-y-4">
         {filteredMovements.length === 0 ? (
           <Card>
@@ -735,7 +726,6 @@ export function Movements() {
                   </div>
                 </div>
 
-                {/* Info de venta */}
                 {movement.reason === "Venta" && (
                   <div className="mt-4 p-3 bg-muted/50 rounded-md space-y-2">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -851,7 +841,6 @@ export function Movements() {
         )}
       </div>
 
-      {/* Dialog nuevo movimiento */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -864,7 +853,6 @@ export function Movements() {
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
-              {/* Producto */}
               <div className="space-y-2">
                 <Label htmlFor="product">
                   Producto <span className="text-destructive">*</span>
@@ -885,12 +873,21 @@ export function Movements() {
                         {isEmployee && userBranch ? ` en ${userBranch}` : ""}
                       </div>
                     ) : (
-                      visibleProducts.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name} · {product.branch} · Stock:{" "}
-                          {product.currentStock}
-                        </SelectItem>
-                      ))
+                      visibleProducts.map((product) => {
+                        const hasPrice = product.price > 0;
+                        return (
+                          <SelectItem
+                            key={product.id}
+                            value={product.id}
+                            disabled={!hasPrice && formData.type === "exit" && formData.reason === "Venta"}
+                            className={!hasPrice ? "text-muted-foreground" : ""}
+                          >
+                            {product.name} · {product.branch} · Stock:{" "}
+                            {product.currentStock} {product.unit || "unidades"}
+                            {!hasPrice && " ⚠️ Sin precio"}
+                          </SelectItem>
+                        );
+                      })
                     )}
                   </SelectContent>
                 </Select>
@@ -905,14 +902,23 @@ export function Movements() {
                       <span className="font-semibold">
                         {selectedProduct.currentStock}
                       </span>{" "}
-                      unidades · {selectedProduct.category} ·{" "}
+                      {selectedProduct.unit || "unidades"} · {selectedProduct.category} ·{" "}
                       <span className="font-medium">{selectedProduct.branch}</span>
+                      {selectedProduct.price === 0 && (
+                        <span className="ml-2 text-amber-600 font-medium">
+                          ⚠️ Sin precio definido
+                        </span>
+                      )}
                     </p>
+                    {isSale && selectedProduct.price === 0 && (
+                      <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
+                        ⚠️ No se puede vender este producto porque no tiene precio definido.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Tipo */}
               <div className="space-y-2">
                 <Label htmlFor="type">
                   Tipo de Movimiento <span className="text-destructive">*</span>
@@ -951,7 +957,6 @@ export function Movements() {
                 )}
               </div>
 
-              {/* Cantidad y Fecha */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="quantity">
@@ -1000,7 +1005,6 @@ export function Movements() {
                 </div>
               </div>
 
-              {/* Motivo */}
               <div className="space-y-2">
                 <Label htmlFor="reason">
                   Motivo <span className="text-destructive">*</span>
@@ -1032,9 +1036,13 @@ export function Movements() {
                 {formErrors.reason && (
                   <p className="text-sm text-destructive">{formErrors.reason}</p>
                 )}
+                {isSale && selectedProduct && selectedProduct.price === 0 && (
+                  <p className="text-sm text-destructive">
+                    No se puede seleccionar "Venta" porque el producto no tiene precio.
+                  </p>
+                )}
               </div>
 
-              {/* SECCIÓN DE VENTA */}
               {isSale && (
                 <>
                   <Separator />
@@ -1044,7 +1052,6 @@ export function Movements() {
                       <p className="font-medium text-sm">Información de la Venta</p>
                     </div>
 
-                    {/* Vendedor (auto desde sesión) */}
                     <div className="p-3 bg-muted/50 rounded-md text-sm flex items-center gap-2">
                       <User className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">Vendedor:</span>
@@ -1058,18 +1065,14 @@ export function Movements() {
                       </span>
                     </div>
 
-                    {/* Cliente */}
                     <div className="space-y-2">
-                      <Label htmlFor="customerName">
-                        Nombre del cliente (opcional)
-                      </Label>
+                      <Label htmlFor="customerName">Nombre del cliente (opcional)</Label>
                       <Input
                         id="customerName"
                         value={formData.customerName}
                         onChange={(e) => handleCustomerNameChange(e.target.value)}
                         placeholder="Nombre del cliente"
                       />
-                      {/* Info de cliente detectado */}
                       {formData.customerName && formData.customerName.length >= 2 && (
                         <div className="text-xs mt-1">
                           {foundCustomer ? (
@@ -1105,9 +1108,7 @@ export function Movements() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="customerPhone">
-                        Teléfono del cliente (opcional)
-                      </Label>
+                      <Label htmlFor="customerPhone">Teléfono del cliente (opcional)</Label>
                       <Input
                         id="customerPhone"
                         value={formData.customerPhone}
@@ -1143,7 +1144,6 @@ export function Movements() {
                       </Label>
                     </div>
 
-                    {/* Pago en efectivo */}
                     <div className="flex items-center gap-3">
                       <Checkbox
                         id="isCash"
@@ -1162,12 +1162,9 @@ export function Movements() {
                       </Label>
                     </div>
 
-                    {/* Descuento */}
                     {activeDiscounts.length > 0 && (
                       <div className="space-y-2">
-                        <Label htmlFor="discount">
-                          Aplicar oferta / descuento
-                        </Label>
+                        <Label htmlFor="discount">Aplicar oferta / descuento</Label>
                         <Select
                           value={formData.discountId}
                           onValueChange={(v) =>
@@ -1219,8 +1216,7 @@ export function Movements() {
                       </div>
                     )}
 
-                    {/* Preview de precio */}
-                    {selectedProduct && qty > 0 && (
+                    {selectedProduct && qty > 0 && hasValidPrice && (
                       <div className="p-3 bg-primary/5 border border-primary/20 rounded-md space-y-1 text-sm">
                         <p className="font-medium text-foreground">
                           Resumen de la venta
@@ -1279,12 +1275,16 @@ export function Movements() {
                         </div>
                       </div>
                     )}
+                    {selectedProduct && qty > 0 && !hasValidPrice && (
+                      <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
+                        ⚠️ No se puede mostrar el resumen porque el producto no tiene precio definido.
+                      </div>
+                    )}
                   </div>
                   <Separator />
                 </>
               )}
 
-              {/* Descripción adicional */}
               <div className="space-y-2">
                 <Label htmlFor="description">
                   Descripción adicional
