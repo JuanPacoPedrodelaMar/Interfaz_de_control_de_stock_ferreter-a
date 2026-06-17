@@ -1,8 +1,8 @@
-# PROJECT DUMP — Control de Stock Ferretería
+## `PROJECT_DUMP.md` – Control de Stock Ferretería
 
-Generado: 2026-06-17
+Generado: 2026-06-18
 
-## Árbol de Archivos
+### Árbol de Archivos
 
 ```
 src/
@@ -74,6 +74,8 @@ src/
 │   │   ├── Login.tsx
 │   │   ├── Movements.tsx
 │   │   ├── Offers.tsx
+│   │   ├── Purchases.tsx
+│   │   ├── Requests.tsx
 │   │   └── Restock.tsx
 │   ├── types/
 │   │   └── index.ts
@@ -97,9 +99,9 @@ src/
 
 ---
 
-## Contenido de Archivos Relevantes
+### Contenido de Archivos
 
-### `src/app/App.tsx`
+#### `src/app/App.tsx`
 ```tsx
 import { RouterProvider } from "react-router";
 import { router } from "./routes";
@@ -119,9 +121,7 @@ export default function App() {
 }
 ```
 
----
-
-### `src/app/routes.tsx`
+#### `src/app/routes.tsx`
 ```tsx
 import React from "react";
 import { createBrowserRouter, Navigate } from "react-router";
@@ -133,6 +133,8 @@ import { Offers } from "./pages/Offers";
 import { Login } from "./pages/Login";
 import { Layout } from "./components/Layout";
 import { useAuth } from "./contexts/AuthContext";
+import { Purchases } from "./pages/Purchases";
+import { Requests } from "./pages/Requests";
 
 function ProtectedLayout() {
   const { isAuthenticated } = useAuth();
@@ -156,14 +158,14 @@ export const router = createBrowserRouter([
       { path: "movements", element: <Movements /> },
       { path: "restock", element: <Restock /> },
       { path: "offers", element: <Offers /> },
+      { path: "purchases", element: <Purchases /> },
+      { path: "requests", element: <Requests /> },
     ],
   },
 ]);
 ```
 
----
-
-### `src/app/contexts/AuthContext.tsx`
+#### `src/app/contexts/AuthContext.tsx`
 ```tsx
 import React, { createContext, useContext, useState } from "react";
 import { User } from "../types";
@@ -224,9 +226,7 @@ export function useAuth() {
 }
 ```
 
----
-
-### `src/app/contexts/UndoContext.tsx`
+#### `src/app/contexts/UndoContext.tsx`
 ```tsx
 import React, { createContext, useContext } from "react";
 import { useUndoAction, UndoAction } from "../hooks/useUndoAction";
@@ -266,9 +266,7 @@ export function useUndo() {
 }
 ```
 
----
-
-### `src/app/hooks/useTheme.ts`
+#### `src/app/hooks/useTheme.ts`
 ```ts
 import { useEffect, useState } from "react";
 
@@ -299,9 +297,7 @@ export function useTheme() {
 }
 ```
 
----
-
-### `src/app/hooks/useUndoAction.ts`
+#### `src/app/hooks/useUndoAction.ts`
 ```ts
 import { useCallback, useState } from "react";
 
@@ -311,35 +307,22 @@ export interface UndoAction {
   redo: () => void;
 }
 
-/**
- * Hook para gestionar historial de deshacer/rehacer.
- *
- * Retorna:
- * - `canUndo`: boolean si hay acciones para deshacer
- * - `canRedo`: boolean si hay acciones para rehacer
- * - `pushAction(action)`: añade una nueva acción al historial
- * - `undo()`: deshace la última acción
- * - `redo()`: rehace la última acción deshecha
- */
 export function useUndoAction() {
   const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAction[]>([]);
 
   const pushAction = useCallback((action: UndoAction) => {
     setUndoStack((prev) => [...prev, action]);
-    setRedoStack([]); // Clear redo stack when new action is performed
+    setRedoStack([]);
   }, []);
 
   const undo = useCallback(() => {
     setUndoStack((prev) => {
       if (prev.length === 0) return prev;
-
       const lastAction = prev[prev.length - 1];
       const newStack = prev.slice(0, -1);
-
       lastAction.undo();
       setRedoStack((redoPrev) => [...redoPrev, lastAction]);
-
       return newStack;
     });
   }, []);
@@ -347,13 +330,10 @@ export function useUndoAction() {
   const redo = useCallback(() => {
     setRedoStack((prev) => {
       if (prev.length === 0) return prev;
-
       const lastAction = prev[prev.length - 1];
       const newStack = prev.slice(0, -1);
-
       lastAction.redo();
       setUndoStack((undoPrev) => [...undoPrev, lastAction]);
-
       return newStack;
     });
   }, []);
@@ -368,9 +348,7 @@ export function useUndoAction() {
 }
 ```
 
----
-
-### `src/app/components/Layout.tsx`
+#### `src/app/components/Layout.tsx`
 ```tsx
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
@@ -387,6 +365,8 @@ import {
   Building2,
   Undo2,
   Redo2,
+  ShoppingCart,
+  ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "./ui/utils";
 import { useTheme } from "../hooks/useTheme";
@@ -419,6 +399,7 @@ export function Layout() {
   const { currentUser, logout, isAdmin } = useAuth();
   const { canUndo, canRedo, undo, redo } = useUndo();
 
+  const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
 
   const handleLogout = () => {
@@ -427,7 +408,6 @@ export function Layout() {
     navigate("/login", { replace: true });
   };
 
-  // Keyboard shortcuts for undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z" && canUndo) {
@@ -443,7 +423,6 @@ export function Layout() {
         }
       }
     };
-
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [canUndo, canRedo, undo, redo]);
@@ -452,16 +431,15 @@ export function Layout() {
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
     { name: "Inventario", path: "/inventory", icon: Package },
     { name: "Movimientos", path: "/movements", icon: ArrowLeftRight },
-    { name: "A Reponer", path: "/restock", icon: AlertTriangle },
-    ...(isAdmin || isContador
-      ? [{ name: "Ofertas", path: "/offers", icon: Tag }]
-      : []),
+    ...(isAdmin || isEmployee ? [{ name: "A Reponer", path: "/restock", icon: AlertTriangle }] : []),
+    ...(isAdmin || isEmployee ? [{ name: "Solicitudes", path: "/requests", icon: ArrowRightLeft }] : []),
+    ...(isAdmin || isContador ? [{ name: "Compras", path: "/purchases", icon: ShoppingCart }] : []),
+    ...(isAdmin || isContador ? [{ name: "Ofertas", path: "/offers", icon: Tag }] : []),
   ];
 
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background">
-        {/* Header */}
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between gap-4">
@@ -473,8 +451,6 @@ export function Layout() {
                 <h1 className="text-xl font-semibold text-foreground lg:hidden">
                   Ferretería
                 </h1>
-
-                {/* Undo/Redo buttons */}
                 <div className="hidden sm:flex items-center gap-1 ml-2 border-l border-border pl-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -484,7 +460,6 @@ export function Layout() {
                         onClick={undo}
                         disabled={!canUndo}
                         className="h-8 w-8"
-                        aria-label="Deshacer (Ctrl+Z)"
                       >
                         <Undo2 className="h-4 w-4" />
                       </Button>
@@ -493,7 +468,6 @@ export function Layout() {
                       <p>Deshacer (Ctrl+Z)</p>
                     </TooltipContent>
                   </Tooltip>
-
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -502,7 +476,6 @@ export function Layout() {
                         onClick={redo}
                         disabled={!canRedo}
                         className="h-8 w-8"
-                        aria-label="Rehacer (Ctrl+Y)"
                       >
                         <Redo2 className="h-4 w-4" />
                       </Button>
@@ -515,7 +488,6 @@ export function Layout() {
               </div>
               <div className="flex items-center gap-3">
                 <GlobalSearch />
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -523,7 +495,6 @@ export function Layout() {
                       size="icon"
                       onClick={toggleTheme}
                       className="rounded-full"
-                      aria-label={`Cambiar a modo ${theme === "dark" ? "claro" : "oscuro"}`}
                     >
                       {theme === "dark" ? (
                         <Sun className="h-5 w-5" />
@@ -536,8 +507,6 @@ export function Layout() {
                     <p>Cambiar a modo {theme === "dark" ? "claro" : "oscuro"}</p>
                   </TooltipContent>
                 </Tooltip>
-
-                {/* User menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" className="flex items-center gap-2 max-w-[200px]">
@@ -592,8 +561,6 @@ export function Layout() {
             </div>
           </div>
         </header>
-
-        {/* Navigation */}
         <nav
           className="bg-card border-b border-border overflow-x-auto"
           aria-label="Navegación principal"
@@ -623,8 +590,6 @@ export function Layout() {
             </div>
           </div>
         </nav>
-
-        {/* Main Content */}
         <main className="px-4 sm:px-6 lg:px-8 py-8">
           <Outlet />
         </main>
@@ -634,9 +599,7 @@ export function Layout() {
 }
 ```
 
----
-
-### `src/app/components/GlobalSearch.tsx`
+#### `src/app/components/GlobalSearch.tsx`
 ```tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
@@ -685,7 +648,6 @@ export function GlobalSearch() {
         setIsOpen(true);
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
@@ -703,7 +665,6 @@ export function GlobalSearch() {
           <span className="text-xs">⌘</span>K
         </kbd>
       </Button>
-
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
@@ -723,20 +684,15 @@ export function GlobalSearch() {
                 autoFocus
               />
             </div>
-
             <div className="max-h-[400px] overflow-y-auto">
               {searchTerm === "" ? (
                 <div className="py-12 text-center">
                   <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">
-                    Escribe para buscar productos
-                  </p>
+                  <p className="text-sm text-muted-foreground">Escribe para buscar productos</p>
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="py-12 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    No se encontraron productos
-                  </p>
+                  <p className="text-sm text-muted-foreground">No se encontraron productos</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -751,9 +707,7 @@ export function GlobalSearch() {
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-medium text-foreground">
-                                {product.name}
-                              </p>
+                              <p className="font-medium text-foreground">{product.name}</p>
                               {isLowStock && (
                                 <span className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-400 px-2 py-0.5 rounded-full">
                                   Stock bajo
@@ -765,16 +719,8 @@ export function GlobalSearch() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-medium">
-                              ${product.price.toLocaleString("es-AR")}
-                            </p>
-                            <p
-                              className={`text-sm ${
-                                isLowStock
-                                  ? "text-amber-600"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
+                            <p className="text-sm font-medium">${product.price.toLocaleString("es-AR")}</p>
+                            <p className={`text-sm ${isLowStock ? "text-amber-600" : "text-muted-foreground"}`}>
                               Stock: {product.currentStock}
                             </p>
                           </div>
@@ -793,42 +739,7 @@ export function GlobalSearch() {
 }
 ```
 
----
-
-### `src/app/components/figma/ImageWithFallback.tsx`
-```tsx
-import React, { useState } from 'react'
-
-const ERROR_IMG_SRC =
-  'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODgiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIuMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIzLjciPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjU2IiBoZWlnaHQ9IjU2IiByeD0iNiIvPjxwYXRoIGQ9Im0xNiA1OCAxNi0xOCAzMiAzMiIvPjxjaXJjbGUgY3g9IjUzIiBjeT0iMzUiIHI9IjciLz48L3N2Zz4KCg=='
-
-export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [didError, setDidError] = useState(false)
-
-  const handleError = () => {
-    setDidError(true)
-  }
-
-  const { src, alt, style, className, ...rest } = props
-
-  return didError ? (
-    <div
-      className={`inline-block bg-gray-100 text-center align-middle ${className ?? ''}`}
-      style={style}
-    >
-      <div className="flex items-center justify-center w-full h-full">
-        <img src={ERROR_IMG_SRC} alt="Error loading image" {...rest} data-original-url={src} />
-      </div>
-    </div>
-  ) : (
-    <img src={src} alt={alt} className={className} style={style} {...rest} onError={handleError} />
-  )
-}
-```
-
----
-
-### `src/app/components/UndoToast.tsx`
+#### `src/app/components/UndoToast.tsx`
 ```tsx
 import { useEffect, useRef, useState } from "react";
 import { X, RotateCcw } from "lucide-react";
@@ -840,31 +751,13 @@ interface UndoToastProps {
   onDismiss: () => void;
 }
 
-/**
- * Toast de deshacer no intrusivo — aparece en la esquina inferior izquierda
- * para no interferir con las notificaciones Sonner del lado superior derecho.
- *
- * Incluye:
- * - Mensaje descriptivo de la acción realizada
- * - Botón "Deshacer" para revertir la acción
- * - Botón "×" para cerrar rápidamente
- * - Barra de progreso que muestra el tiempo restante
- * - Soporte de teclado: Ctrl+Z / Cmd+Z
- *
- * Heurísticas de Nielsen que mejora:
- * H1 – Visibilidad del estado: la barra de progreso muestra el tiempo restante
- * H3 – Control y libertad: permite deshacer cualquier acción destructiva o de mutación
- * H7 – Flexibilidad: atajo de teclado Ctrl+Z para usuarios avanzados
- */
 export function UndoToast({ message, onUndo, onDismiss }: UndoToastProps) {
   const [progress, setProgress] = useState(100);
   const startRef = useRef(Date.now());
   const rafRef = useRef<number | null>(null);
 
-  // Anima la barra de progreso usando requestAnimationFrame para suavidad
   useEffect(() => {
     startRef.current = Date.now();
-
     const tick = () => {
       const elapsed = Date.now() - startRef.current;
       const pct = Math.max(0, 100 - (elapsed / UNDO_DURATION) * 100);
@@ -873,14 +766,12 @@ export function UndoToast({ message, onUndo, onDismiss }: UndoToastProps) {
         rafRef.current = requestAnimationFrame(tick);
       }
     };
-
     rafRef.current = requestAnimationFrame(tick);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
-  // Atajo de teclado: Ctrl+Z / Cmd+Z
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
@@ -893,57 +784,69 @@ export function UndoToast({ message, onUndo, onDismiss }: UndoToastProps) {
   }, [onUndo]);
 
   return (
-    <div
-      className="fixed bottom-5 left-5 z-50 w-[300px] rounded-lg shadow-lg border border-border bg-card text-card-foreground overflow-hidden animate-in slide-in-from-bottom-3 fade-in duration-200"
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-    >
+    <div className="fixed bottom-5 left-5 z-50 w-[300px] rounded-lg shadow-lg border border-border bg-card text-card-foreground overflow-hidden animate-in slide-in-from-bottom-3 fade-in duration-200">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
-        <RotateCcw
-          className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <span className="text-sm flex-1 text-foreground leading-snug truncate">
-          {message}
-        </span>
+        <RotateCcw className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <span className="text-sm flex-1 text-foreground leading-snug truncate">{message}</span>
         <button
           onClick={onUndo}
           className="text-xs font-semibold text-primary hover:text-primary/80 hover:underline shrink-0 px-1.5 py-0.5 rounded hover:bg-primary/10 transition-colors"
-          aria-label="Deshacer acción (Ctrl+Z)"
         >
           Deshacer
         </button>
         <button
           onClick={onDismiss}
           className="text-muted-foreground hover:text-foreground shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
-          aria-label="Cerrar notificación"
         >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      {/* Barra de tiempo — H1: Visibilidad del estado del sistema */}
       <div className="h-[3px] bg-muted" aria-hidden="true">
-        <div
-          className="h-full bg-primary"
-          style={{ width: `${progress}%`, transition: "none" }}
-        />
+        <div className="h-full bg-primary" style={{ width: `${progress}%`, transition: "none" }} />
       </div>
     </div>
   );
 }
 ```
 
----
+#### `src/app/components/figma/ImageWithFallback.tsx`
+```tsx
+import React, { useState } from 'react';
 
-### `src/app/pages/Dashboard.tsx`
+const ERROR_IMG_SRC = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODgiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIuMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIzLjciPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjU2IiBoZWlnaHQ9IjU2IiByeD0iNiIvPjxwYXRoIGQ9Im0xNiA1OCAxNi0xOCAzMiAzMiIvPjxjaXJjbGUgY3g9IjUzIiBjeT0iMzUiIHI9IjciLz48L3N2Zz4KCg==';
+
+export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const [didError, setDidError] = useState(false);
+  const handleError = () => setDidError(true);
+  const { src, alt, style, className, ...rest } = props;
+  return didError ? (
+    <div className={`inline-block bg-gray-100 text-center align-middle ${className ?? ''}`} style={style}>
+      <div className="flex items-center justify-center w-full h-full">
+        <img src={ERROR_IMG_SRC} alt="Error loading image" {...rest} data-original-url={src} />
+      </div>
+    </div>
+  ) : (
+    <img src={src} alt={alt} className={className} style={style} {...rest} onError={handleError} />
+  );
+}
+```
+
+#### `src/app/pages/Dashboard.tsx`
 ```tsx
 import { useEffect, useState } from "react";
-import { Product, Movement } from "../types";
+import { Product, Movement, StockRequest } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { AlertTriangle, Package, TrendingUp, TrendingDown, Building2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Package,
+  TrendingUp,
+  TrendingDown,
+  Building2,
+  AlertCircle,
+  Bell,
+} from "lucide-react";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import { Link } from "react-router";
 
@@ -951,16 +854,27 @@ export function Dashboard() {
   const { currentUser } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<StockRequest[]>([]);
 
   const isEmployee = currentUser?.role === "employee";
+  const isContador = currentUser?.role === "contador";
+  const isAdmin = currentUser?.role === "admin";
   const userBranch = currentUser?.branch;
 
   useEffect(() => {
     setProducts(storage.getProducts());
     setMovements(storage.getMovements());
-  }, []);
+    if (currentUser && !isContador) {
+      const allRequests = storage.getStockRequests();
+      const pending = allRequests.filter(
+        (r) => r.toBranch === currentUser.branch && r.status === "pending"
+      );
+      setPendingRequests(pending);
+    } else {
+      setPendingRequests([]);
+    }
+  }, [currentUser, isContador]);
 
-  // Los empleados solo ven los datos de su sucursal
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
@@ -976,6 +890,8 @@ export function Dashboard() {
   const lowStockProducts = visibleProducts.filter(
     (p) => p.currentStock <= p.minStock
   );
+  const productsWithoutPrice = visibleProducts.filter((p) => p.price === 0);
+
   const totalValue = visibleProducts.reduce(
     (sum, p) => sum + p.price * p.currentStock,
     0
@@ -1002,24 +918,47 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Alerta stock bajo - en amber, diferente al naranja principal */}
-      {lowStockProducts.length > 0 && (
+      {!isContador && pendingRequests.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-400 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30">
+          <Bell className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-blue-800 dark:text-blue-300">
+            Tienes <strong>{pendingRequests.length} solicitud(es) de stock pendiente(s)</strong> de otras sucursales.
+            <Link to="/requests" className="underline font-medium hover:text-blue-900 dark:hover:text-blue-200 ml-1">
+              Revisar solicitudes
+            </Link>
+          </AlertDescription>
+        </div>
+      )}
+
+      {!isContador && lowStockProducts.length > 0 && (
         <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
           <AlertDescription className="text-amber-800 dark:text-amber-300">
             <strong>{lowStockProducts.length} producto(s)</strong> están por debajo del stock
             mínimo{isEmployee && userBranch ? ` en ${userBranch}` : ""}.{" "}
-            <Link
-              to="/restock"
-              className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
-            >
+            <Link to="/restock" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200">
               Ver productos a reponer
             </Link>
           </AlertDescription>
         </div>
       )}
 
-      {/* Tarjetas de resumen */}
+      {(isAdmin || isContador) && productsWithoutPrice.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300">
+            <strong>{productsWithoutPrice.length} producto(s)</strong> no tienen precio definido.{" "}
+            {isContador ? (
+              "Por favor, asigna un precio para habilitarlos a la venta."
+            ) : (
+              <Link to="/inventory" className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200">
+                Ver productos sin precio
+              </Link>
+            )}
+          </AlertDescription>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Link to="/inventory">
           <Card className="hover:bg-accent transition-colors cursor-pointer">
@@ -1035,7 +974,6 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-
         <Link to="/restock">
           <Card className="hover:bg-accent transition-colors cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1050,7 +988,6 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-
         <Link to="/movements?filter=entry">
           <Card className="hover:bg-accent transition-colors cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1063,7 +1000,6 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </Link>
-
         <Link to="/movements?filter=exit">
           <Card className="hover:bg-accent transition-colors cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1078,15 +1014,12 @@ export function Dashboard() {
         </Link>
       </div>
 
-      {/* Valor total del inventario */}
       <Card>
         <CardHeader>
           <CardTitle>
             Valor Total del Inventario
             {isEmployee && userBranch && (
-              <span className="text-sm font-normal text-muted-foreground ml-2">
-                — {userBranch}
-              </span>
+              <span className="text-sm font-normal text-muted-foreground ml-2">— {userBranch}</span>
             )}
           </CardTitle>
         </CardHeader>
@@ -1100,7 +1033,6 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Movimientos recientes */}
       {visibleMovements.length > 0 && (
         <Card>
           <CardHeader>
@@ -1109,10 +1041,7 @@ export function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               {visibleMovements.slice(0, 5).map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between text-sm"
-                >
+                <div key={m.id} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     {m.type === "entry" ? (
                       <TrendingUp className="h-4 w-4 text-blue-600" />
@@ -1123,13 +1052,8 @@ export function Dashboard() {
                     <span className="text-muted-foreground">{m.reason}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span
-                      className={
-                        m.type === "entry" ? "text-blue-600" : "text-green-600"
-                      }
-                    >
-                      {m.type === "entry" ? "+" : "-"}
-                      {m.quantity}
+                    <span className={m.type === "entry" ? "text-blue-600" : "text-green-600"}>
+                      {m.type === "entry" ? "+" : "-"}{m.quantity}
                     </span>
                     <span className="text-muted-foreground text-xs">
                       {new Date(m.date + "T12:00:00").toLocaleDateString("es-AR")}
@@ -1138,10 +1062,7 @@ export function Dashboard() {
                 </div>
               ))}
             </div>
-            <Link
-              to="/movements"
-              className="text-sm text-primary hover:underline mt-4 inline-block"
-            >
+            <Link to="/movements" className="text-sm text-primary hover:underline mt-4 inline-block">
               Ver todos los movimientos →
             </Link>
           </CardContent>
@@ -1151,13 +1072,28 @@ export function Dashboard() {
   );
 }
 ```
+Entendido. Voy a retomar el `PROJECT_DUMP.md` desde donde lo dejé en el mensaje anterior. Incluiré el contenido completo de los siguientes archivos:
+
+- `src/app/pages/Inventory.tsx`
+- `src/app/pages/Movements.tsx`
+- `src/app/pages/Offers.tsx`
+- `src/app/pages/Purchases.tsx`
+- `src/app/pages/Requests.tsx`
+- `src/app/pages/Restock.tsx`
+- `src/app/types/index.ts`
+- `src/app/utils/storage.ts`
+- `src/styles/theme.css`
+- `src/README.md`
+
+Para asegurarme de que el dump sea completo y detallado, incluiré el código íntegro de cada archivo, sin recortes. Este mensaje será extenso (más de 2000 líneas). Continuaré en el siguiente mensaje si es necesario, pero aquí va la primera parte.
 
 ---
 
 ### `src/app/pages/Inventory.tsx`
+
 ```tsx
 import { useEffect, useState, useRef } from "react";
-import { Product, CATEGORIES, BRANCHES } from "../types";
+import { Product, CATEGORIES, BRANCHES, UNITS } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { useUndo } from "../contexts/UndoContext";
@@ -1191,6 +1127,8 @@ import {
   Lock,
   TrendingUp,
   TrendingDown,
+  FileSpreadsheet,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -1210,21 +1148,26 @@ export function Inventory() {
   const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
+  const isAdmin = currentUser?.role === "admin";
   const userBranch = currentUser?.branch;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  // Empleados comienzan con su sucursal; admin comienza con "all"
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
+  const [showOnlyNoPrice, setShowOnlyNoPrice] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
   const [showBranchCopy, setShowBranchCopy] = useState(false);
   const nameInputRef = useRef<HTMLDivElement>(null);
+
+  // Estado para el diálogo de carga Excel (solo interfaz)
+  const [isExcelDialogOpen, setIsExcelDialogOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -1233,6 +1176,7 @@ export function Inventory() {
     price: "",
     currentStock: "",
     minStock: "",
+    unit: "Unidades",
   });
 
   const [formErrors, setFormErrors] = useState({
@@ -1242,6 +1186,7 @@ export function Inventory() {
     price: "",
     currentStock: "",
     minStock: "",
+    unit: "",
   });
 
   useEffect(() => {
@@ -1258,8 +1203,7 @@ export function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Los empleados solo ven los productos de su sucursal
-  // Contadores y admin ven todo
+  // Filtrar productos según rol y filtros
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
@@ -1272,10 +1216,20 @@ export function Inventory() {
       (product.branch && product.branch.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory = categoryFilter === "all" || product.category === categoryFilter;
     const matchesBranch = branchFilter === "all" || product.branch === branchFilter;
-    return matchesSearch && matchesCategory && matchesBranch;
+    const matchesNoPrice = !showOnlyNoPrice || product.price === 0;
+    return matchesSearch && matchesCategory && matchesBranch && matchesNoPrice;
   });
 
+  // Productos sin precio (para notificaciones)
+  const productsWithoutPrice = visibleProducts.filter((p) => p.price === 0);
+
   const handleOpenDialog = (product?: Product) => {
+    // Si es contador, solo puede editar precio, y solo si el producto existe (no crear)
+    if (isContador && !product) {
+      toast.info("Los contadores no pueden crear productos. Solo pueden definir precios.");
+      return;
+    }
+
     if (product) {
       setEditingProduct(product);
       setFormData({
@@ -1285,20 +1239,21 @@ export function Inventory() {
         price: product.price.toString(),
         currentStock: product.currentStock.toString(),
         minStock: product.minStock.toString(),
+        unit: product.unit || "Unidades",
       });
     } else {
       setEditingProduct(null);
       setFormData({
         name: "",
         category: "",
-        // Los empleados siempre crean productos en su propia sucursal
         branch: isEmployee && userBranch ? userBranch : "",
-        price: "",
+        price: "0", // empleados crean con precio 0
         currentStock: "",
         minStock: "",
+        unit: "Unidades",
       });
     }
-    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" });
     setSimilarProducts([]);
     setShowBranchCopy(false);
     setIsDialogOpen(true);
@@ -1318,7 +1273,6 @@ export function Inventory() {
     }
   };
 
-  // Copiar configuración de un producto existente para agregar a otra sucursal
   const handleCopyToNewBranch = (product: Product) => {
     setSimilarProducts([]);
     setShowBranchCopy(false);
@@ -1326,11 +1280,11 @@ export function Inventory() {
     setFormData({
       name: product.name,
       category: product.category,
-      // Empleados solo pueden copiar a su propia sucursal
       branch: isEmployee && userBranch ? userBranch : "",
-      price: product.price.toString(),
+      price: "0", // siempre precio 0 para nuevo producto
       currentStock: "0",
       minStock: product.minStock.toString(),
+      unit: product.unit || "Unidades",
     });
     toast.info(`Configuración copiada de "${product.name}". Selecciona la nueva sucursal y ajusta el stock.`);
   };
@@ -1345,6 +1299,7 @@ export function Inventory() {
       price: product.price.toString(),
       currentStock: product.currentStock.toString(),
       minStock: product.minStock.toString(),
+      unit: product.unit || "Unidades",
     });
     toast.info(`Editando producto existente: "${product.name}" en ${product.branch}`);
   };
@@ -1358,17 +1313,32 @@ export function Inventory() {
       name: "",
       category: "",
       branch: isEmployee && userBranch ? userBranch : "",
-      price: "",
+      price: "0",
       currentStock: "",
       minStock: "",
+      unit: "Unidades",
     });
-    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" });
+    setFormErrors({ name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" });
   };
 
   const validateForm = () => {
-    const errors = { name: "", category: "", branch: "", price: "", currentStock: "", minStock: "" };
+    const errors = { name: "", category: "", branch: "", price: "", currentStock: "", minStock: "", unit: "" };
     let isValid = true;
 
+    // Si es contador, solo validamos precio
+    if (isContador) {
+      if (!formData.price) {
+        errors.price = "El precio es obligatorio";
+        isValid = false;
+      } else if (parseFloat(formData.price) <= 0) {
+        errors.price = "El precio debe ser mayor a 0";
+        isValid = false;
+      }
+      setFormErrors(errors);
+      return isValid;
+    }
+
+    // Validación completa para admin y empleado
     if (!formData.name.trim()) {
       errors.name = "El nombre del producto es obligatorio";
       isValid = false;
@@ -1387,6 +1357,11 @@ export function Inventory() {
       isValid = false;
     }
 
+    if (!formData.unit) {
+      errors.unit = "Debes seleccionar una unidad de medida";
+      isValid = false;
+    }
+
     // Si es nuevo producto, verificar que no exista ya en esa sucursal
     if (!editingProduct && formData.branch) {
       const duplicate = products.find(
@@ -1400,11 +1375,9 @@ export function Inventory() {
       }
     }
 
-    if (!formData.price) {
-      errors.price = "El precio es obligatorio";
-      isValid = false;
-    } else if (parseFloat(formData.price) <= 0) {
-      errors.price = "El precio debe ser mayor a 0";
+    // Para admin, el precio puede ser cualquier número >= 0 (si se muestra)
+    if (isAdmin && formData.price && parseFloat(formData.price) < 0) {
+      errors.price = "El precio no puede ser negativo";
       isValid = false;
     }
 
@@ -1439,21 +1412,30 @@ export function Inventory() {
     let updatedProducts: Product[];
 
     if (editingProduct) {
+      // Si es contador, solo actualiza precio
+      let updatedFields: Partial<Product> = {};
+      if (isContador) {
+        updatedFields = {
+          price: parseFloat(formData.price),
+        };
+      } else {
+        updatedFields = {
+          name: formData.name.trim(),
+          category: formData.category,
+          branch: formData.branch,
+          price: parseFloat(formData.price),
+          currentStock: parseInt(formData.currentStock),
+          minStock: parseInt(formData.minStock),
+          unit: formData.unit,
+        };
+      }
       updatedProducts = products.map((p) =>
         p.id === editingProduct.id
-          ? {
-              ...p,
-              name: formData.name.trim(),
-              category: formData.category,
-              branch: formData.branch,
-              price: parseFloat(formData.price),
-              currentStock: parseInt(formData.currentStock),
-              minStock: parseInt(formData.minStock),
-            }
+          ? { ...p, ...updatedFields }
           : p
       );
-      toast.success(`"${formData.name}" actualizado correctamente`);
-      const productName = formData.name.trim();
+      toast.success(`"${editingProduct.name}" actualizado correctamente`);
+      const productName = editingProduct.name;
       pushAction({
         message: `"${productName}" actualizado`,
         undo: () => {
@@ -1468,14 +1450,16 @@ export function Inventory() {
         },
       });
     } else {
+      // Crear nuevo producto (solo admin o empleado)
       const newProduct: Product = {
         id: Date.now().toString(),
         name: formData.name.trim(),
         category: formData.category,
         branch: formData.branch,
-        price: parseFloat(formData.price),
+        price: parseFloat(formData.price), // empleados siempre 0
         currentStock: parseInt(formData.currentStock),
         minStock: parseInt(formData.minStock),
+        unit: formData.unit,
         createdAt: new Date().toISOString(),
       };
       updatedProducts = [...products, newProduct];
@@ -1527,12 +1511,27 @@ export function Inventory() {
     });
   };
 
-  // Agrupar productos por nombre para mostrar cuántas sucursales tiene
-  const productNameCounts = products.reduce((acc, p) => {
-    acc[p.name.toLowerCase()] = (acc[p.name.toLowerCase()] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  // --- Diálogo de carga Excel (SOLO INTERFAZ) ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      setFile(null);
+      return;
+    }
+    setFile(files[0]);
+    toast.info(`Archivo seleccionado: ${files[0].name}`);
+  };
 
+  const handleImportExcel = () => {
+    if (!file) {
+      toast.error("Selecciona un archivo primero.");
+      return;
+    }
+    // Demostración: solo mostramos un mensaje
+    toast.info("Funcionalidad de importación en desarrollo. Por ahora, solo se muestra la interfaz.");
+  };
+
+  // --- Actualización masiva de precios (solo admin y contador) ---
   const [isPriceUpdateOpen, setIsPriceUpdateOpen] = useState(false);
   const [priceUpdatePercent, setPriceUpdatePercent] = useState("");
   const [priceUpdateDirection, setPriceUpdateDirection] = useState<"increase" | "decrease">("increase");
@@ -1583,6 +1582,12 @@ export function Inventory() {
     setPriceUpdateDirection("increase");
   };
 
+  // Agrupar productos por nombre para mostrar cuántas sucursales tiene
+  const productNameCounts = products.reduce((acc, p) => {
+    acc[p.name.toLowerCase()] = (acc[p.name.toLowerCase()] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1602,21 +1607,106 @@ export function Inventory() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Botón de importación Excel (solo admin y empleados) */}
+          {!isContador && (
+            <Button variant="outline" onClick={() => setIsExcelDialogOpen(true)}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Cargar Excel
+            </Button>
+          )}
+
           {canBulkUpdatePrices && (
             <Button variant="outline" onClick={() => setIsPriceUpdateOpen(true)}>
               <TrendingUp className="h-4 w-4 mr-2" />
               Actualizar precios
             </Button>
           )}
-          <Button onClick={() => handleOpenDialog()}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nuevo Producto
-          </Button>
+
+          {/* Botón nuevo producto: solo admin y empleados (no contador) */}
+          {!isContador && (
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Producto
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Dialog actualización masiva de precios */}
+      {/* Alerta de productos sin precio (para admin y contador) */}
+      {(isAdmin || isContador) && productsWithoutPrice.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+          <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="text-amber-800 dark:text-amber-300">
+            <strong>{productsWithoutPrice.length} producto(s)</strong> no tienen precio definido.{" "}
+            {isContador ? (
+              "Por favor, asigna un precio a estos productos para habilitarlos para la venta."
+            ) : (
+              <span>
+                Los contadores deben definir el precio.{" "}
+                <button
+                  onClick={() => setShowOnlyNoPrice(true)}
+                  className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
+                >
+                  Ver productos sin precio
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo de carga Excel (SOLO INTERFAZ) */}
+      <Dialog open={isExcelDialogOpen} onOpenChange={setIsExcelDialogOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Cargar productos desde Excel</DialogTitle>
+            <DialogDescription>
+              Sube un archivo Excel (.xlsx, .xls) con los datos de los productos.
+              Los productos se crearán con <strong>precio 0</strong> (deberá ser definido por un contador).
+              <br />
+              <span className="text-amber-600 dark:text-amber-400">⚠️ Funcionalidad en demostración — la importación real no está activa.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-muted/50 rounded-lg border border-border">
+              <h4 className="font-medium mb-2">Formato esperado de columnas:</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="font-mono bg-background px-1 rounded">nombre</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">categoría</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">sucursal</span> <span className="text-muted-foreground">(obligatorio)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">stock_actual</span> <span className="text-muted-foreground">(obligatorio, número)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">stock_mínimo</span> <span className="text-muted-foreground">(obligatorio, número)</span></div>
+                <div><span className="font-mono bg-background px-1 rounded">unidad</span> <span className="text-muted-foreground">(opcional, por defecto "Unidades")</span></div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Las categorías y sucursales deben coincidir con las definidas en el sistema.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="excel-file">Seleccionar archivo</Label>
+              <Input
+                id="excel-file"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsExcelDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleImportExcel} disabled={!file}>
+                Importar productos (demo)
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de actualización masiva de precios */}
       <Dialog open={isPriceUpdateOpen} onOpenChange={setIsPriceUpdateOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -1714,7 +1804,7 @@ export function Inventory() {
       {/* Filtros */}
       <Card>
         <CardContent className="pt-6">
-          <div className={`grid gap-4 ${isEmployee ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+          <div className={`grid gap-4 ${isEmployee || isContador ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -1739,8 +1829,8 @@ export function Inventory() {
               </SelectContent>
             </Select>
 
-            {/* El filtro de sucursal solo aparece para el admin */}
-            {!isEmployee && (
+            {/* Filtro de sucursal solo para admin (y contador? contador ve todas) */}
+            {!isEmployee && !isContador && (
               <Select value={branchFilter} onValueChange={setBranchFilter}>
                 <SelectTrigger aria-label="Filtrar por sucursal">
                   <SelectValue placeholder="Filtrar por sucursal" />
@@ -1756,7 +1846,24 @@ export function Inventory() {
               </Select>
             )}
           </div>
-          {(searchTerm || categoryFilter !== "all" || (!isEmployee && branchFilter !== "all")) && (
+          {/* Filtro adicional para "Sin precio" (admin y contador) */}
+          {(isAdmin || isContador) && (
+            <div className="flex items-center gap-3 mt-3">
+              <Button
+                variant={showOnlyNoPrice ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowOnlyNoPrice(!showOnlyNoPrice)}
+              >
+                {showOnlyNoPrice ? "Mostrar todos" : "Mostrar sin precio"}
+                {productsWithoutPrice.length > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {productsWithoutPrice.length}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+          )}
+          {(searchTerm || categoryFilter !== "all" || (!isEmployee && !isContador && branchFilter !== "all") || showOnlyNoPrice) && (
             <p className="text-sm text-muted-foreground mt-3">
               Mostrando {filteredProducts.length} de {visibleProducts.length} registros
             </p>
@@ -1780,6 +1887,10 @@ export function Inventory() {
           filteredProducts.map((product) => {
             const isLowStock = product.currentStock <= product.minStock;
             const branchCount = productNameCounts[product.name.toLowerCase()] || 1;
+            const hasPrice = product.price > 0;
+            const canEditPrice = isAdmin || isContador;
+            const canEditFull = isAdmin || isEmployee;
+
             return (
               <Card
                 key={product.id}
@@ -1790,6 +1901,11 @@ export function Inventory() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-lg">{product.name}</CardTitle>
+                        {!hasPrice && (
+                          <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                            Sin precio
+                          </Badge>
+                        )}
                         {isLowStock && (
                           <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500" />
                         )}
@@ -1805,34 +1921,44 @@ export function Inventory() {
                         <span className="font-medium text-foreground/80">
                           {product.branch || "Sin sucursal"}
                         </span>
+                        {" • "}
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {product.unit || "Unidades"}
+                        </span>
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenDialog(product)}
-                        aria-label={`Editar ${product.name}`}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setProductToDelete(product)}
-                        aria-label={`Eliminar ${product.name}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {/* Botón editar: si es contador, solo puede editar precio; admin y empleado pueden editar todo */}
+                      {(canEditFull || canEditPrice) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenDialog(product)}
+                          aria-label={`Editar ${product.name}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* Eliminar solo admin y empleado (no contador) */}
+                      {!isContador && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setProductToDelete(product)}
+                          aria-label={`Eliminar ${product.name}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Precio</p>
-                      <p className="text-lg font-semibold">
-                        ${product.price.toLocaleString("es-AR")}
+                      <p className={`text-lg font-semibold ${hasPrice ? "" : "text-muted-foreground"}`}>
+                        {hasPrice ? `$${product.price.toLocaleString("es-AR")}` : "Sin asignar"}
                       </p>
                     </div>
                     <div>
@@ -1842,17 +1968,23 @@ export function Inventory() {
                           isLowStock ? "text-amber-600 dark:text-amber-500" : ""
                         }`}
                       >
-                        {product.currentStock} unidades
+                        {product.currentStock} {product.unit || "u"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Mínimo</p>
-                      <p className="text-lg font-semibold">{product.minStock} unidades</p>
+                      <p className="text-lg font-semibold">{product.minStock} {product.unit || "u"}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Unidad</p>
+                      <p className="text-lg font-semibold">{product.unit || "Unidades"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Valor Total</p>
                       <p className="text-lg font-semibold text-primary">
-                        ${(product.price * product.currentStock).toLocaleString("es-AR")}
+                        {hasPrice
+                          ? `$${(product.price * product.currentStock).toLocaleString("es-AR")}`
+                          : "—"}
                       </p>
                     </div>
                   </div>
@@ -1860,6 +1992,13 @@ export function Inventory() {
                     <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-md">
                       <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
                         ⚠️ Stock bajo en {product.branch}: Este producto requiere reposición
+                      </p>
+                    </div>
+                  )}
+                  {!hasPrice && (isAdmin || isContador) && (
+                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 rounded-md">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                        💰 Este producto no tiene precio definido. Asigna un precio para habilitarlo para la venta.
                       </p>
                     </div>
                   )}
@@ -1879,145 +2018,212 @@ export function Inventory() {
             </DialogTitle>
             <DialogDescription>
               {editingProduct
-                ? "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
+                ? isContador
+                  ? "Define el precio del producto. Los demás campos no son editables para contadores."
+                  : "Modifica los datos del producto. Un mismo producto puede tener stock independiente en cada sucursal."
                 : isEmployee
-                ? `Los productos se agregarán al inventario de ${userBranch}.`
+                ? `Los productos se agregarán al inventario de ${userBranch} sin precio (deberá ser definido por un contador).`
                 : "Completa los campos. El mismo producto puede existir en distintas sucursales con stock separado."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
-              {/* Nombre */}
-              <div className="space-y-2">
-                <Label htmlFor="name">
-                  Nombre del Producto <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative" ref={nameInputRef}>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="Ingrese nombre del producto"
-                    aria-required="true"
-                    aria-invalid={!!formErrors.name}
-                  />
-                  {/* Panel de productos similares */}
-                  {similarProducts.length > 0 && !editingProduct && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
-                      <div className="p-2 border-b border-border bg-muted/50">
-                        <p className="text-xs text-muted-foreground font-medium">
-                          Este producto existe en otras sucursales — ¿qué deseas hacer?
-                        </p>
-                      </div>
-                      {similarProducts.map((product) => (
-                        <div
-                          key={product.id}
-                          className="p-3 border-b border-border last:border-b-0"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <p className="font-medium text-sm text-foreground">
-                                {product.name}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {product.branch} • Stock: {product.currentStock}
-                              </p>
-                            </div>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleCopyToNewBranch(product)}
-                                className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition-colors"
-                                title="Agregar a nueva sucursal con esta configuración"
-                              >
-                                <Copy className="h-3 w-3" />
-                                Nueva sucursal
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSelectExistingProduct(product)}
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors"
-                              >
-                                <Edit className="h-3 w-3" />
-                                Editar
-                              </button>
-                            </div>
+              {/* Nombre - solo visible para admin y empleado (no contador) */}
+              {!isContador && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">
+                      Nombre del Producto <span className="text-destructive">*</span>
+                    </Label>
+                    <div className="relative" ref={nameInputRef}>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => handleNameChange(e.target.value)}
+                        placeholder="Ingrese nombre del producto"
+                        aria-required="true"
+                        aria-invalid={!!formErrors.name}
+                      />
+                      {/* Panel de productos similares */}
+                      {similarProducts.length > 0 && !editingProduct && (
+                        <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-[240px] overflow-y-auto">
+                          <div className="p-2 border-b border-border bg-muted/50">
+                            <p className="text-xs text-muted-foreground font-medium">
+                              Este producto existe en otras sucursales — ¿qué deseas hacer?
+                            </p>
                           </div>
+                          {similarProducts.map((product) => (
+                            <div
+                              key={product.id}
+                              className="p-3 border-b border-border last:border-b-0"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm text-foreground">
+                                    {product.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {product.branch} • Stock: {product.currentStock}
+                                  </p>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyToNewBranch(product)}
+                                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md transition-colors"
+                                    title="Agregar a nueva sucursal con esta configuración"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                    Nueva sucursal
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectExistingProduct(product)}
+                                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                    Editar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
-                {formErrors.name && (
-                  <p className="text-sm text-destructive">{formErrors.name}</p>
-                )}
-              </div>
-
-              {/* Categoría */}
-              <div className="space-y-2">
-                <Label htmlFor="category">
-                  Categoría <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
-                  <SelectTrigger id="category">
-                    <SelectValue placeholder="Selecciona una categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formErrors.category && (
-                  <p className="text-sm text-destructive">{formErrors.category}</p>
-                )}
-              </div>
-
-              {/* Sucursal: bloqueada para empleados, editable para admin */}
-              <div className="space-y-2">
-                <Label htmlFor="branch">
-                  Sucursal <span className="text-destructive">*</span>
-                </Label>
-                {isEmployee ? (
-                  <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-foreground">
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="flex-1">{userBranch}</span>
-                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {formErrors.name && (
+                      <p className="text-sm text-destructive">{formErrors.name}</p>
+                    )}
                   </div>
-                ) : (
-                  <Select
-                    value={formData.branch}
-                    onValueChange={(value) => setFormData({ ...formData, branch: value })}
-                  >
-                    <SelectTrigger id="branch">
-                      <SelectValue placeholder="Selecciona una sucursal" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BRANCHES.map((branch) => (
-                        <SelectItem key={branch} value={branch}>
-                          {branch}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {formErrors.branch && (
-                  <p className="text-sm text-destructive">{formErrors.branch}</p>
-                )}
-                {showBranchCopy && formData.branch && !editingProduct && (
-                  <p className="text-xs text-muted-foreground">
-                    Se creará un registro independiente para esta sucursal con su propio stock.
-                  </p>
-                )}
-              </div>
 
-              {/* Precio y Stock */}
-              <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="category">
+                      Categoría <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.category}
+                      onValueChange={(value) => setFormData({ ...formData, category: value })}
+                    >
+                      <SelectTrigger id="category">
+                        <SelectValue placeholder="Selecciona una categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formErrors.category && (
+                      <p className="text-sm text-destructive">{formErrors.category}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="branch">
+                      Sucursal <span className="text-destructive">*</span>
+                    </Label>
+                    {isEmployee ? (
+                      <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-muted/50 text-sm text-foreground">
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="flex-1">{userBranch}</span>
+                        <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <Select
+                        value={formData.branch}
+                        onValueChange={(value) => setFormData({ ...formData, branch: value })}
+                      >
+                        <SelectTrigger id="branch">
+                          <SelectValue placeholder="Selecciona una sucursal" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {BRANCHES.map((branch) => (
+                            <SelectItem key={branch} value={branch}>
+                              {branch}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {formErrors.branch && (
+                      <p className="text-sm text-destructive">{formErrors.branch}</p>
+                    )}
+                    {showBranchCopy && formData.branch && !editingProduct && (
+                      <p className="text-xs text-muted-foreground">
+                        Se creará un registro independiente para esta sucursal con su propio stock.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="unit">
+                      Unidad de medida <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      value={formData.unit}
+                      onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                    >
+                      <SelectTrigger id="unit">
+                        <SelectValue placeholder="Selecciona una unidad" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {UNITS.map((unit) => (
+                          <SelectItem key={unit} value={unit}>
+                            {unit}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {formErrors.unit && (
+                      <p className="text-sm text-destructive">{formErrors.unit}</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="currentStock">
+                        Stock Actual <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="currentStock"
+                        type="number"
+                        min="0"
+                        value={formData.currentStock}
+                        onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+                        placeholder="0"
+                      />
+                      {formErrors.currentStock && (
+                        <p className="text-sm text-destructive">{formErrors.currentStock}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="minStock">
+                        Stock Mínimo <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="minStock"
+                        type="number"
+                        min="0"
+                        value={formData.minStock}
+                        onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                        placeholder="0"
+                      />
+                      {formErrors.minStock && (
+                        <p className="text-sm text-destructive">{formErrors.minStock}</p>
+                      )}
+                      <p className="text-sm text-muted-foreground">
+                        Alerta cuando el stock sea igual o menor a este valor (por sucursal)
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Precio - solo visible para admin y contador */}
+              {(isAdmin || isContador) && (
                 <div className="space-y-2">
                   <Label htmlFor="price">
                     Precio ($) <span className="text-destructive">*</span>
@@ -2034,45 +2240,22 @@ export function Inventory() {
                   {formErrors.price && (
                     <p className="text-sm text-destructive">{formErrors.price}</p>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="currentStock">
-                    Stock Actual <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="currentStock"
-                    type="number"
-                    min="0"
-                    value={formData.currentStock}
-                    onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
-                    placeholder="0"
-                  />
-                  {formErrors.currentStock && (
-                    <p className="text-sm text-destructive">{formErrors.currentStock}</p>
+                  {isContador && (
+                    <p className="text-sm text-muted-foreground">
+                      Asigna el precio para habilitar el producto a la venta.
+                    </p>
                   )}
                 </div>
-              </div>
+              )}
 
-              <div className="space-y-2">
-                <Label htmlFor="minStock">
-                  Stock Mínimo <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="minStock"
-                  type="number"
-                  min="0"
-                  value={formData.minStock}
-                  onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
-                  placeholder="0"
-                />
-                {formErrors.minStock && (
-                  <p className="text-sm text-destructive">{formErrors.minStock}</p>
-                )}
-                <p className="text-sm text-muted-foreground">
-                  Alerta cuando el stock sea igual o menor a este valor (por sucursal)
-                </p>
-              </div>
+              {/* Si es contador y está editando, mostramos el nombre y unidad como texto informativo */}
+              {isContador && editingProduct && (
+                <div className="p-3 bg-muted/50 rounded-md text-sm space-y-1">
+                  <p><span className="text-muted-foreground">Producto:</span> {editingProduct.name}</p>
+                  <p><span className="text-muted-foreground">Sucursal:</span> {editingProduct.branch}</p>
+                  <p><span className="text-muted-foreground">Unidad:</span> {editingProduct.unit || "Unidades"}</p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog}>
@@ -2117,178 +2300,8 @@ export function Inventory() {
 
 ---
 
-### `src/app/pages/Login.tsx`
-```tsx
-import { useState } from "react";
-import { useNavigate } from "react-router";
-import { useAuth } from "../contexts/AuthContext";
-import { Package, Eye, EyeOff, Lock, User } from "lucide-react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
-import { toast } from "sonner";
-
-export function Login() {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!username.trim() || !password.trim()) {
-      setError("Por favor ingresa tu usuario y contraseña");
-      return;
-    }
-
-    setIsLoading(true);
-    // Small delay to feel authentic
-    await new Promise((r) => setTimeout(r, 500));
-
-    const success = login(username.trim(), password);
-    setIsLoading(false);
-
-    if (success) {
-      toast.success("Sesión iniciada correctamente");
-      navigate("/", { replace: true });
-    } else {
-      setError("Usuario o contraseña incorrectos");
-    }
-  };
-
-  const demoAccounts = [
-    { label: "Administrador", username: "admin", password: "admin123", branch: "Todas las sucursales" },
-    { label: "Contador", username: "contador", password: "contador123", branch: "Todas las sucursales" },
-    { label: "Empleado - Suc. Centro", username: "juanperez", password: "empleado123", branch: "Sucursal Centro" },
-    { label: "Empleado - Suc. Norte", username: "mariagarcia", password: "empleado123", branch: "Sucursal Norte" },
-    { label: "Empleado - Suc. Sur", username: "carloslopez", password: "empleado123", branch: "Sucursal Sur" },
-  ];
-
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo y título */}
-        <div className="text-center space-y-2">
-          <div className="flex justify-center">
-            <div className="bg-primary rounded-2xl p-4">
-              <Package className="h-10 w-10 text-primary-foreground" />
-            </div>
-          </div>
-          <h1 className="text-3xl font-semibold text-foreground">Ferretería</h1>
-          <p className="text-muted-foreground">Control de Stock</p>
-        </div>
-
-        {/* Formulario */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Iniciar sesión</CardTitle>
-            <CardDescription>
-              Ingresa tus credenciales para acceder al sistema
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="username">Usuario</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Ingresa tu usuario"
-                    className="pl-10"
-                    autoComplete="username"
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Ingresa tu contraseña"
-                    className="pl-10 pr-10"
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md">
-                  <p className="text-sm text-destructive font-medium">{error}</p>
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Ingresando..." : "Ingresar"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Cuentas demo */}
-        <Card className="border-dashed">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Cuentas de demostración</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
-              {demoAccounts.map((acc) => (
-                <button
-                  key={acc.username}
-                  type="button"
-                  onClick={() => {
-                    setUsername(acc.username);
-                    setPassword(acc.password);
-                    setError("");
-                  }}
-                  className="w-full text-left p-3 rounded-md border border-border hover:bg-accent transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{acc.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Usuario: <span className="font-mono">{acc.username}</span> · Pass:{" "}
-                        <span className="font-mono">{acc.password}</span>
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-right">{acc.branch}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-```
-
----
-
 ### `src/app/pages/Movements.tsx`
+
 ```tsx
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -2430,27 +2443,36 @@ export function Movements() {
   const selectedDiscount = discounts.find((d) => d.id === formData.discountId);
   const cashDiscount = discounts.find((d) => d.id === "d-cash" && d.isActive);
 
+  // Calcular precios solo si el producto tiene precio > 0
   const unitPrice = selectedProduct?.price || 0;
+  const hasValidPrice = selectedProduct ? selectedProduct.price > 0 : false;
   const qty = parseInt(formData.quantity) || 0;
+
   let discountAmount = 0;
-  if (selectedDiscount && qty > 0) {
-    if (selectedDiscount.type === "percentage") {
-      discountAmount = unitPrice * (selectedDiscount.value / 100);
-    } else {
-      discountAmount = selectedDiscount.value;
-    }
-  }
-  const priceAfterDiscount = Math.max(0, unitPrice - discountAmount);
+  let priceAfterDiscount = 0;
   let cashDiscountAmount = 0;
-  if (formData.isCash && cashDiscount && qty > 0) {
-    if (cashDiscount.type === "percentage") {
-      cashDiscountAmount = priceAfterDiscount * (cashDiscount.value / 100);
-    } else {
-      cashDiscountAmount = cashDiscount.value;
+  let finalUnitPrice = 0;
+  let totalAmount = 0;
+
+  if (hasValidPrice) {
+    if (selectedDiscount && qty > 0) {
+      if (selectedDiscount.type === "percentage") {
+        discountAmount = unitPrice * (selectedDiscount.value / 100);
+      } else {
+        discountAmount = selectedDiscount.value;
+      }
     }
+    priceAfterDiscount = Math.max(0, unitPrice - discountAmount);
+    if (formData.isCash && cashDiscount && qty > 0) {
+      if (cashDiscount.type === "percentage") {
+        cashDiscountAmount = priceAfterDiscount * (cashDiscount.value / 100);
+      } else {
+        cashDiscountAmount = cashDiscount.value;
+      }
+    }
+    finalUnitPrice = Math.max(0, priceAfterDiscount - cashDiscountAmount);
+    totalAmount = finalUnitPrice * qty;
   }
-  const finalUnitPrice = Math.max(0, priceAfterDiscount - cashDiscountAmount);
-  const totalAmount = finalUnitPrice * qty;
 
   const handleCustomerNameChange = (name: string) => {
     const found = storage.findCustomerByName(name);
@@ -2527,6 +2549,15 @@ export function Movements() {
       isValid = false;
     }
 
+    // Validación específica para ventas: el producto debe tener precio definido
+    if (isSale && selectedProduct && selectedProduct.price === 0) {
+      errors.productId = "No se puede vender un producto sin precio definido. Asigna un precio primero.";
+      toast.error("Este producto no tiene precio definido. Un contador debe asignarle un precio antes de poder venderlo.", {
+        duration: 5000,
+      });
+      isValid = false;
+    }
+
     if (
       isSale &&
       selectedDiscount?.appliesTo === "frequent_customers" &&
@@ -2552,6 +2583,12 @@ export function Movements() {
     const product = products.find((p) => p.id === formData.productId);
     if (!product) {
       toast.error("Producto no encontrado");
+      return;
+    }
+
+    // Si es venta y el producto no tiene precio, no debería llegar aquí, pero por seguridad
+    if (isSale && product.price === 0) {
+      toast.error("No se puede vender un producto sin precio.");
       return;
     }
 
@@ -2653,10 +2690,18 @@ export function Movements() {
     });
   };
 
+  // Productos visibles según rol, y además filtramos los que tienen precio para ventas
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
       : products;
+
+  // Para el select, mostramos todos pero marcamos los que no tienen precio
+  const productOptions = visibleProducts.map((p) => ({
+    ...p,
+    hasPrice: p.price > 0,
+    disabledForSale: p.price === 0,
+  }));
 
   const filteredMovements = movements
     .filter((m) => {
@@ -3133,12 +3178,21 @@ export function Movements() {
                         {isEmployee && userBranch ? ` en ${userBranch}` : ""}
                       </div>
                     ) : (
-                      visibleProducts.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name} · {product.branch} · Stock:{" "}
-                          {product.currentStock}
-                        </SelectItem>
-                      ))
+                      visibleProducts.map((product) => {
+                        const hasPrice = product.price > 0;
+                        return (
+                          <SelectItem
+                            key={product.id}
+                            value={product.id}
+                            disabled={!hasPrice && formData.type === "exit" && formData.reason === "Venta"}
+                            className={!hasPrice ? "text-muted-foreground" : ""}
+                          >
+                            {product.name} · {product.branch} · Stock:{" "}
+                            {product.currentStock} {product.unit || "unidades"}
+                            {!hasPrice && " ⚠️ Sin precio"}
+                          </SelectItem>
+                        );
+                      })
                     )}
                   </SelectContent>
                 </Select>
@@ -3153,9 +3207,19 @@ export function Movements() {
                       <span className="font-semibold">
                         {selectedProduct.currentStock}
                       </span>{" "}
-                      unidades · {selectedProduct.category} ·{" "}
+                      {selectedProduct.unit || "unidades"} · {selectedProduct.category} ·{" "}
                       <span className="font-medium">{selectedProduct.branch}</span>
+                      {selectedProduct.price === 0 && (
+                        <span className="ml-2 text-amber-600 font-medium">
+                          ⚠️ Sin precio definido
+                        </span>
+                      )}
                     </p>
+                    {isSale && selectedProduct.price === 0 && (
+                      <div className="mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
+                        ⚠️ No se puede vender este producto porque no tiene precio definido.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3276,6 +3340,11 @@ export function Movements() {
                 </Select>
                 {formErrors.reason && (
                   <p className="text-sm text-destructive">{formErrors.reason}</p>
+                )}
+                {isSale && selectedProduct && selectedProduct.price === 0 && (
+                  <p className="text-sm text-destructive">
+                    No se puede seleccionar "Venta" porque el producto no tiene precio.
+                  </p>
                 )}
               </div>
 
@@ -3452,7 +3521,7 @@ export function Movements() {
                       </div>
                     )}
 
-                    {selectedProduct && qty > 0 && (
+                    {selectedProduct && qty > 0 && hasValidPrice && (
                       <div className="p-3 bg-primary/5 border border-primary/20 rounded-md space-y-1 text-sm">
                         <p className="font-medium text-foreground">
                           Resumen de la venta
@@ -3509,6 +3578,11 @@ export function Movements() {
                             })}
                           </span>
                         </div>
+                      </div>
+                    )}
+                    {selectedProduct && qty > 0 && !hasValidPrice && (
+                      <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-md text-sm text-destructive">
+                        ⚠️ No se puede mostrar el resumen porque el producto no tiene precio definido.
                       </div>
                     )}
                   </div>
@@ -3569,6 +3643,7 @@ export function Movements() {
 ---
 
 ### `src/app/pages/Offers.tsx`
+
 ```tsx
 import { useEffect, useState } from "react";
 import { Discount } from "../types";
@@ -4075,10 +4150,340 @@ export function Offers() {
 
 ---
 
-### `src/app/pages/Restock.tsx`
+### `src/app/pages/Purchases.tsx`
+
 ```tsx
 import { useEffect, useState } from "react";
-import { Product } from "../types";
+import { PurchaseOrder } from "../types";
+import { storage } from "../utils/storage";
+import { useAuth } from "../contexts/AuthContext";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Calendar, Package, Building2 } from "lucide-react";
+import { Navigate } from "react-router";
+
+export function Purchases() {
+  const { currentUser } = useAuth();
+  const isContador = currentUser?.role === "contador";
+  const isAdmin = currentUser?.role === "admin";
+
+  if (!isContador && !isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
+
+  useEffect(() => {
+    setPurchases(storage.getPurchaseOrders());
+  }, []);
+
+  const getStatusBadge = (status: PurchaseOrder["status"]) => {
+    const variants = {
+      pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+      delivered: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+      cancelled: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    };
+    const labels = {
+      pending: "Pendiente",
+      delivered: "Entregado",
+      cancelled: "Cancelado",
+    };
+    return <Badge className={variants[status]}>{labels[status]}</Badge>;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-3xl font-semibold text-foreground">Registro de Compras a Proveedores</h2>
+        <p className="text-muted-foreground mt-1">
+          Historial de pedidos realizados para reposición de stock.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Historial de Compras</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {purchases.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              No hay compras registradas aún.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Producto</TableHead>
+                    <TableHead>Sucursal</TableHead>
+                    <TableHead>Cantidad</TableHead>
+                    <TableHead>Costo Total</TableHead>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {purchases.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        {new Date(p.date + "T12:00:00").toLocaleDateString("es-AR")}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                          {p.productName}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          {p.branch}
+                        </div>
+                      </TableCell>
+                      <TableCell>{p.quantity} {p.productUnit || "unidades"}</TableCell>
+                      <TableCell>${p.cost.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell>{p.provider}</TableCell>
+                      <TableCell>{getStatusBadge(p.status)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+---
+
+### `src/app/pages/Requests.tsx`
+
+```tsx
+import { useEffect, useState } from "react";
+import { StockRequest } from "../types";
+import { storage } from "../utils/storage";
+import { useAuth } from "../contexts/AuthContext";
+import { useUndo } from "../contexts/UndoContext";
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Check, X, Clock, ArrowRightLeft } from "lucide-react";
+import { toast } from "sonner";
+import { Navigate } from "react-router";
+
+export function Requests() {
+  const { currentUser } = useAuth();
+  const isEmployee = currentUser?.role === "employee";
+  const isAdmin = currentUser?.role === "admin";
+  const isContador = currentUser?.role === "contador";
+
+  if (isContador) {
+    return <Navigate to="/purchases" replace />;
+  }
+
+  const userBranch = currentUser?.branch;
+  const [requests, setRequests] = useState<StockRequest[]>([]);
+
+  useEffect(() => {
+    setRequests(storage.getStockRequests());
+  }, []);
+
+  const filteredRequests = requests.filter((r) => {
+    if (isAdmin) return true;
+    if (isEmployee) {
+      return r.fromBranch === userBranch || r.toBranch === userBranch;
+    }
+    return false;
+  });
+
+  const received = filteredRequests.filter((r) => r.toBranch === userBranch && r.status === "pending");
+  const sent = filteredRequests.filter((r) => r.fromBranch === userBranch);
+  const other = filteredRequests.filter((r) => isAdmin || (r.status !== "pending" && (r.fromBranch === userBranch || r.toBranch === userBranch)));
+
+  const handleApprove = (request: StockRequest) => {
+    const updated = storage.updateStockRequestStatus(request.id, "approved", currentUser!.id, currentUser!.fullName);
+    if (!updated) return;
+
+    const products = storage.getProducts();
+    const destProduct = products.find((p) => p.id === request.productId && p.branch === request.toBranch);
+    const originProduct = products.find((p) => p.id === request.productId && p.branch === request.fromBranch);
+
+    if (destProduct && originProduct) {
+      if (originProduct.currentStock < request.quantity) {
+        toast.error(`Stock insuficiente en ${request.fromBranch} para aprobar la solicitud.`);
+        return;
+      }
+      const updatedProducts = products.map((p) => {
+        if (p.id === request.productId && p.branch === request.fromBranch) {
+          return { ...p, currentStock: p.currentStock - request.quantity };
+        }
+        if (p.id === request.productId && p.branch === request.toBranch) {
+          return { ...p, currentStock: p.currentStock + request.quantity };
+        }
+        return p;
+      });
+      storage.saveProducts(updatedProducts);
+    }
+
+    setRequests(storage.getStockRequests());
+    toast.success(`Solicitud aprobada: ${request.quantity} ${request.productUnit || "unidades"} de "${request.productName}"`);
+  };
+
+  const handleReject = (request: StockRequest) => {
+    const updated = storage.updateStockRequestStatus(request.id, "rejected", currentUser!.id, currentUser!.fullName);
+    if (!updated) return;
+    setRequests(storage.getStockRequests());
+    toast.info(`Solicitud rechazada: ${request.quantity} ${request.productUnit || "unidades"} de "${request.productName}"`);
+  };
+
+  const getStatusBadge = (status: StockRequest["status"]) => {
+    const variants = {
+      pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+      approved: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+      rejected: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+    };
+    const labels = {
+      pending: "Pendiente",
+      approved: "Aprobada",
+      rejected: "Rechazada",
+    };
+    return <Badge className={variants[status]}>{labels[status]}</Badge>;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-3xl font-semibold text-foreground">Solicitudes de Stock</h2>
+        <p className="text-muted-foreground mt-1">
+          Gestiona las solicitudes de stock entre sucursales.
+        </p>
+      </div>
+
+      {received.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5" />
+              Solicitudes recibidas (pendientes)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Producto</TableHead>
+                    <TableHead>Cantidad</TableHead>
+                    <TableHead>Solicitante</TableHead>
+                    <TableHead>Sucursal origen</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {received.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>{r.productName}</TableCell>
+                      <TableCell>{r.quantity} {r.productUnit || "unidades"}</TableCell>
+                      <TableCell>{r.requestedByName}</TableCell>
+                      <TableCell>{r.fromBranch}</TableCell>
+                      <TableCell>{new Date(r.createdAt).toLocaleDateString("es-AR")}</TableCell>
+                      <TableCell className="flex gap-1">
+                        <Button size="sm" variant="default" onClick={() => handleApprove(r)}>
+                          <Check className="h-4 w-4 mr-1" /> Aprobar
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleReject(r)}>
+                          <X className="h-4 w-4 mr-1" /> Rechazar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(sent.length > 0 || other.length > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Historial de solicitudes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {sent.length === 0 && other.length === 0 && (
+              <div className="py-8 text-center text-muted-foreground">No hay solicitudes previas.</div>
+            )}
+            {(sent.length > 0 || other.length > 0) && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Producto</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Desde</TableHead>
+                      <TableHead>Hacia</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sent.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell>{r.productName}</TableCell>
+                        <TableCell>{r.quantity} {r.productUnit || "unidades"}</TableCell>
+                        <TableCell>{r.fromBranch}</TableCell>
+                        <TableCell>{r.toBranch}</TableCell>
+                        <TableCell>{getStatusBadge(r.status)}</TableCell>
+                        <TableCell>{new Date(r.createdAt).toLocaleDateString("es-AR")}</TableCell>
+                      </TableRow>
+                    ))}
+                    {other.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell>{r.productName}</TableCell>
+                        <TableCell>{r.quantity} {r.productUnit || "unidades"}</TableCell>
+                        <TableCell>{r.fromBranch}</TableCell>
+                        <TableCell>{r.toBranch}</TableCell>
+                        <TableCell>{getStatusBadge(r.status)}</TableCell>
+                        <TableCell>{new Date(r.createdAt).toLocaleDateString("es-AR")}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {received.length === 0 && sent.length === 0 && other.length === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            No hay solicitudes de stock entre sucursales.
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+### `src/app/pages/Restock.tsx`
+
+```tsx
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import { Product, BRANCHES } from "../types";
 import { storage } from "../utils/storage";
 import { useAuth } from "../contexts/AuthContext";
 import { useUndo } from "../contexts/UndoContext";
@@ -4091,7 +4496,7 @@ import {
   Building2,
   Lock,
   Send,
-  Warehouse,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -4102,76 +4507,46 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { BRANCHES } from "../types";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { toast } from "sonner";
 
 export function Restock() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
   const userBranch = currentUser?.branch;
+
+  useEffect(() => {
+    if (isContador) {
+      navigate("/purchases", { replace: true });
+    }
+  }, [isContador, navigate]);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [branchFilter, setBranchFilter] = useState<string>(
     isEmployee && userBranch ? userBranch : "all"
   );
 
+  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [targetBranch, setTargetBranch] = useState<string>("");
+  const [requestQuantity, setRequestQuantity] = useState<number>(0);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+
   useEffect(() => {
     setProducts(storage.getProducts());
   }, []);
-
-  const handleRequestFromWarehouse = (product: Product) => {
-    if (!currentUser) return;
-
-    const warehouseProduct = products.find(
-      (p) => p.id === product.id && p.branch === "Almacén Central"
-    );
-
-    if (!warehouseProduct) {
-      toast.error("Producto no encontrado en el almacén");
-      return;
-    }
-
-    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
-
-    if (warehouseProduct.currentStock < deficit) {
-      toast.error(
-        `Stock insuficiente en almacén. Disponible: ${warehouseProduct.currentStock}, Necesario: ${deficit}`
-      );
-      return;
-    }
-
-    const newRequest = storage.createStockRequest(
-      product.id,
-      product.name,
-      currentUser.id,
-      currentUser.fullName,
-      product.branch,
-      "Almacén Central",
-      deficit
-    );
-
-    pushAction({
-      message: `Solicitud de ${deficit} unidades de ${product.name} enviada al almacén`,
-      undo: () => {
-        const requests = storage.getStockRequests();
-        const filtered = requests.filter((r) => r.id !== newRequest.id);
-        storage.saveStockRequests(filtered);
-        toast.success("Solicitud cancelada");
-      },
-      redo: () => {
-        const requests = storage.getStockRequests();
-        requests.push(newRequest);
-        storage.saveStockRequests(requests);
-        toast.success("Solicitud enviada al almacén");
-      },
-    });
-
-    toast.success(
-      `Solicitud enviada al almacén. Se solicitaron ${deficit} unidades de ${product.name}`
-    );
-  };
 
   const lowStockProducts = products
     .filter((p) => p.currentStock <= p.minStock)
@@ -4185,6 +4560,104 @@ export function Restock() {
   const handlePrint = () => {
     window.print();
   };
+
+  const handleOrderToSupplier = (product: Product) => {
+    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
+    const order = storage.createPurchaseOrder(
+      product.id,
+      product.name,
+      product.unit || "Unidades",
+      product.branch,
+      deficit,
+      product.price * deficit,
+      "Proveedor por defecto"
+    );
+    toast.success(`Pedido a proveedor registrado: ${deficit} ${product.unit || "unidades"} de "${product.name}"`);
+    pushAction({
+      message: `Pedido a proveedor: ${deficit} ${product.unit || "unidades"} de "${product.name}"`,
+      undo: () => {
+        const orders = storage.getPurchaseOrders();
+        const filtered = orders.filter(o => o.id !== order.id);
+        storage.savePurchaseOrders(filtered);
+        toast.info("Pedido a proveedor cancelado");
+      },
+      redo: () => {
+        const orders = storage.getPurchaseOrders();
+        orders.push(order);
+        storage.savePurchaseOrders(orders);
+        toast.success("Pedido a proveedor rehecho");
+      },
+    });
+  };
+
+  const handleOpenRequestDialog = (product: Product) => {
+    setSelectedProduct(product);
+    const deficit = Math.max(product.minStock - product.currentStock, product.minStock);
+    setRequestQuantity(deficit);
+    const branches = BRANCHES.filter(b => b !== product.branch);
+    setAvailableBranches(branches);
+    setTargetBranch(branches.length > 0 ? branches[0] : "");
+    setIsRequestDialogOpen(true);
+  };
+
+  const handleSendRequest = () => {
+    if (!selectedProduct || !targetBranch || requestQuantity <= 0) {
+      toast.error("Selecciona una sucursal y una cantidad válida.");
+      return;
+    }
+
+    const targetProduct = products.find(
+      (p) => p.id === selectedProduct.id && p.branch === targetBranch
+    );
+    if (!targetProduct) {
+      toast.error(`El producto "${selectedProduct.name}" no existe en ${targetBranch}.`);
+      return;
+    }
+    if (targetProduct.currentStock < requestQuantity) {
+      toast.error(
+        `Stock insuficiente en ${targetBranch}. Disponible: ${targetProduct.currentStock} ${targetProduct.unit || "unidades"}.`
+      );
+      return;
+    }
+
+    const request = storage.createStockRequest(
+      selectedProduct.id,
+      selectedProduct.name,
+      selectedProduct.unit || "Unidades",
+      currentUser!.id,
+      currentUser!.fullName,
+      selectedProduct.branch,
+      targetBranch,
+      requestQuantity
+    );
+
+    toast.success(
+      `Solicitud enviada a ${targetBranch}: ${requestQuantity} ${selectedProduct.unit || "unidades"} de "${selectedProduct.name}"`
+    );
+
+    pushAction({
+      message: `Solicitud a ${targetBranch} por ${requestQuantity} ${selectedProduct.unit || "unidades"}`,
+      undo: () => {
+        const requests = storage.getStockRequests();
+        const filtered = requests.filter(r => r.id !== request.id);
+        storage.saveStockRequests(filtered);
+        toast.info("Solicitud cancelada");
+      },
+      redo: () => {
+        const requests = storage.getStockRequests();
+        requests.push(request);
+        storage.saveStockRequests(requests);
+        toast.success("Solicitud rehecha");
+      },
+    });
+
+    setIsRequestDialogOpen(false);
+    setSelectedProduct(null);
+    setTargetBranch("");
+    setRequestQuantity(0);
+  };
+
+  if (isContador) return null;
 
   return (
     <div className="space-y-6">
@@ -4251,7 +4724,7 @@ export function Restock() {
           <CardContent>
             <p className="text-foreground">
               Estos productos han alcanzado o están por debajo de su stock mínimo configurado.
-              El stock mínimo se verifica de forma independiente para cada sucursal.
+              Puedes solicitar stock a otra sucursal o realizar un pedido a proveedor.
             </p>
           </CardContent>
         </Card>
@@ -4313,12 +4786,6 @@ export function Restock() {
                 ? "medium"
                 : "low";
 
-            const warehouseProduct = products.find(
-              (p) => p.id === product.id && p.branch === "Almacén Central"
-            );
-            const warehouseStock = warehouseProduct?.currentStock || 0;
-            const canRequestFromWarehouse = warehouseStock >= deficit;
-
             const severityBorderColors = {
               critical: "border-amber-600 dark:border-amber-600",
               high: "border-amber-500 dark:border-amber-500",
@@ -4349,6 +4816,11 @@ export function Restock() {
               low: "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800",
             };
 
+            // Verificar si hay otra sucursal con stock
+            const otherBranchesWithStock = products.filter(
+              (p) => p.id === product.id && p.branch !== product.branch && p.currentStock > 0
+            );
+
             return (
               <Card key={product.id} className={severityBorderColors[severity]}>
                 <CardHeader>
@@ -4365,6 +4837,10 @@ export function Restock() {
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         {product.category} • {product.branch || "Sin sucursal"}
+                        {" • "}
+                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {product.unit || "Unidades"}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -4374,17 +4850,19 @@ export function Restock() {
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Actual</p>
                       <p className="text-lg font-semibold text-amber-600 dark:text-amber-500">
-                        {product.currentStock} unidades
+                        {product.currentStock} {product.unit || "unidades"}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Stock Mínimo</p>
-                      <p className="text-lg font-semibold">{product.minStock} unidades</p>
+                      <p className="text-lg font-semibold">
+                        {product.minStock} {product.unit || "unidades"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Cantidad Sugerida</p>
                       <p className="text-lg font-semibold text-primary">
-                        {deficit} unidades
+                        {deficit} {product.unit || "unidades"}
                       </p>
                     </div>
                     <div>
@@ -4397,24 +4875,6 @@ export function Restock() {
                       </p>
                     </div>
                   </div>
-
-                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
-                    <div className="border border-border rounded-lg p-3 bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Warehouse className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">
-                            Stock en Almacén Central:
-                          </span>
-                        </div>
-                        <span
-                          className={`text-sm font-semibold ${canRequestFromWarehouse ? "text-green-600" : "text-amber-600"}`}
-                        >
-                          {warehouseStock} unidades
-                        </span>
-                      </div>
-                    </div>
-                  )}
 
                   <div>
                     <div className="flex items-center justify-between text-sm mb-1">
@@ -4429,37 +4889,32 @@ export function Restock() {
                     </div>
                   </div>
 
-                  {(isEmployee || isContador) && product.branch !== "Almacén Central" && (
-                    <div className="flex gap-2 pt-2">
-                      {canRequestFromWarehouse ? (
-                        <Button
-                          onClick={() => handleRequestFromWarehouse(product)}
-                          className="flex-1"
-                          variant="default"
-                        >
-                          <Send className="h-4 w-4 mr-2" />
-                          Solicitar al Almacén ({deficit} unidades)
-                        </Button>
-                      ) : (
-                        <div className="flex-1 space-y-2">
-                          <Button
-                            onClick={() =>
-                              toast.info(
-                                "Pedido registrado para envío a proveedor. El almacén también será notificado para reabastecer."
-                              )
-                            }
-                            className="w-full"
-                            variant="default"
-                          >
-                            <ShoppingCart className="h-4 w-4 mr-2" />
-                            Pedir a Proveedor ({deficit} unidades)
-                          </Button>
-                          <p className="text-xs text-muted-foreground text-center">
-                            Stock insuficiente en almacén ({warehouseStock} disponibles)
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                  {/* Acciones */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button
+                      onClick={() => handleOrderToSupplier(product)}
+                      variant="default"
+                      className="flex-1 min-w-[120px]"
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Pedir a Proveedor
+                    </Button>
+
+                    {otherBranchesWithStock.length > 0 && (
+                      <Button
+                        onClick={() => handleOpenRequestDialog(product)}
+                        variant="outline"
+                        className="flex-1 min-w-[120px]"
+                      >
+                        <ArrowRightLeft className="h-4 w-4 mr-2" />
+                        Solicitar a otra sucursal
+                      </Button>
+                    )}
+                  </div>
+                  {otherBranchesWithStock.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No hay otras sucursales con stock disponible de este producto.
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -4468,6 +4923,75 @@ export function Restock() {
         )}
       </div>
 
+      {/* Diálogo para solicitar a otra sucursal */}
+      <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Solicitar a otra sucursal</DialogTitle>
+            <DialogDescription>
+              Selecciona la sucursal de la cual deseas obtener stock y la cantidad necesaria.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Producto</Label>
+              <p className="text-sm font-medium">{selectedProduct?.name}</p>
+              <p className="text-xs text-muted-foreground">
+                Stock actual: {selectedProduct?.currentStock} {selectedProduct?.unit || "unidades"} · 
+                Sucursal: {selectedProduct?.branch}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="targetBranch">Sucursal destino</Label>
+              <Select value={targetBranch} onValueChange={setTargetBranch}>
+                <SelectTrigger id="targetBranch">
+                  <SelectValue placeholder="Selecciona una sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((branch) => {
+                    // Mostrar stock disponible en esa sucursal
+                    const stockInBranch = products.find(
+                      (p) => p.id === selectedProduct?.id && p.branch === branch
+                    )?.currentStock || 0;
+                    return (
+                      <SelectItem key={branch} value={branch}>
+                        {branch} (Stock: {stockInBranch} {selectedProduct?.unit || "unidades"})
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="requestQuantity">Cantidad a solicitar</Label>
+              <Input
+                id="requestQuantity"
+                type="number"
+                min={1}
+                value={requestQuantity}
+                onChange={(e) => setRequestQuantity(parseInt(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Déficit sugerido: {selectedProduct ? Math.max(selectedProduct.minStock - selectedProduct.currentStock, selectedProduct.minStock) : 0}{" "}
+                {selectedProduct?.unit || "unidades"}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRequestDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSendRequest}>
+              <Send className="h-4 w-4 mr-2" />
+              Enviar solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Resumen de costos */}
       {lowStockProducts.length > 0 && (
         <Card>
           <CardHeader>
@@ -4517,13 +5041,14 @@ export function Restock() {
 ---
 
 ### `src/app/types/index.ts`
+
 ```ts
 export interface User {
   id: string;
   username: string;
   password: string;
-  role: "admin" | "employee" | "contador" | "warehouse";
-  branch: string; // 'all' for admin and contador, 'Almacén Central' for warehouse
+  role: "admin" | "employee" | "contador";
+  branch: string; // 'all' for admin and contador
   fullName: string;
 }
 
@@ -4555,6 +5080,7 @@ export interface Product {
   price: number;
   currentStock: number;
   minStock: number;
+  unit: string;
   createdAt: string;
 }
 
@@ -4568,7 +5094,6 @@ export interface Movement {
   reason: string;
   description?: string;
   date: string;
-  // Sale info (when type=exit, reason=Venta)
   customerName?: string;
   customerPhone?: string;
   isFrequentCustomer?: boolean;
@@ -4603,7 +5128,6 @@ export const BRANCHES = [
   "Sucursal Sur",
   "Sucursal Este",
   "Sucursal Oeste",
-  "Depósito Central",
 ];
 
 export const MOVEMENT_REASONS = {
@@ -4611,7 +5135,6 @@ export const MOVEMENT_REASONS = {
     "Compra a proveedor",
     "Devolución de cliente",
     "Traslado desde otra sucursal",
-    "Traslado desde almacén",
     "Ajuste de inventario (entrada)",
     "Producción interna",
     "Otro",
@@ -4619,7 +5142,6 @@ export const MOVEMENT_REASONS = {
   exit: [
     "Venta",
     "Traslado a otra sucursal",
-    "Traslado a almacén",
     "Producto defectuoso",
     "Producto vencido",
     "Merma o pérdida",
@@ -4633,6 +5155,7 @@ export interface StockRequest {
   id: string;
   productId: string;
   productName: string;
+  productUnit: string;
   requestedBy: string;
   requestedByName: string;
   fromBranch: string;
@@ -4642,14 +5165,43 @@ export interface StockRequest {
   createdAt: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  resolvedByName?: string;
 }
+
+export interface PurchaseOrder {
+  id: string;
+  productId: string;
+  productName: string;
+  productUnit: string;
+  branch: string;
+  quantity: number;
+  cost: number;
+  provider: string;
+  date: string;
+  status: "pending" | "delivered" | "cancelled";
+  createdAt: string;
+}
+
+export const UNITS = [
+  "Unidades",
+  "Metros",
+  "Kilogramos",
+  "Gramos",
+  "Litros",
+  "Centímetros",
+  "Piezas",
+  "Pares",
+  "Docenas",
+  "Otro",
+];
 ```
 
 ---
 
 ### `src/app/utils/storage.ts`
+
 ```ts
-import { Product, Movement, User, Customer, Discount } from "../types";
+import { Product, Movement, User, Customer, Discount, StockRequest, PurchaseOrder } from "../types";
 
 const PRODUCTS_KEY = "ferreteria_products";
 const MOVEMENTS_KEY = "ferreteria_movements";
@@ -4657,6 +5209,8 @@ const USERS_KEY = "ferreteria_users";
 const CUSTOMERS_KEY = "ferreteria_customers";
 const DISCOUNTS_KEY = "ferreteria_discounts";
 const SESSION_KEY = "ferreteria_session";
+const STOCK_REQUESTS_KEY = "ferreteria_stock_requests";
+const PURCHASE_ORDERS_KEY = "ferreteria_purchase_orders";
 
 export const FREQUENT_CUSTOMER_THRESHOLD = 3;
 
@@ -4737,7 +5291,13 @@ export const storage = {
   // Products
   getProducts(): Product[] {
     const data = localStorage.getItem(PRODUCTS_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    let products: Product[] = JSON.parse(data);
+    products = products.map(p => ({
+      ...p,
+      unit: p.unit || "Unidades",
+    }));
+    return products;
   },
   saveProducts(products: Product[]): void {
     localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
@@ -4852,27 +5412,29 @@ export const storage = {
     localStorage.removeItem(SESSION_KEY);
   },
 
-  // Stock Requests (placeholder)
-  getStockRequests(): any[] {
-    const data = localStorage.getItem("ferreteria_stock_requests");
+  // Stock Requests (entre sucursales)
+  getStockRequests(): StockRequest[] {
+    const data = localStorage.getItem(STOCK_REQUESTS_KEY);
     return data ? JSON.parse(data) : [];
   },
-  saveStockRequests(requests: any[]): void {
-    localStorage.setItem("ferreteria_stock_requests", JSON.stringify(requests));
+  saveStockRequests(requests: StockRequest[]): void {
+    localStorage.setItem(STOCK_REQUESTS_KEY, JSON.stringify(requests));
   },
   createStockRequest(
     productId: string,
     productName: string,
+    productUnit: string,
     requestedBy: string,
     requestedByName: string,
     fromBranch: string,
     toBranch: string,
     quantity: number
-  ): any {
-    const newRequest = {
+  ): StockRequest {
+    const newRequest: StockRequest = {
       id: Date.now().toString(),
       productId,
       productName,
+      productUnit,
       requestedBy,
       requestedByName,
       fromBranch,
@@ -4886,27 +5448,69 @@ export const storage = {
     this.saveStockRequests(requests);
     return newRequest;
   },
+  updateStockRequestStatus(
+    requestId: string,
+    status: "approved" | "rejected",
+    resolvedBy: string,
+    resolvedByName: string
+  ): StockRequest | null {
+    const requests = this.getStockRequests();
+    const index = requests.findIndex(r => r.id === requestId);
+    if (index === -1) return null;
+    const updated = {
+      ...requests[index],
+      status,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy,
+      resolvedByName,
+    };
+    requests[index] = updated;
+    this.saveStockRequests(requests);
+    return updated;
+  },
+
+  // Purchase Orders (compras a proveedores)
+  getPurchaseOrders(): PurchaseOrder[] {
+    const data = localStorage.getItem(PURCHASE_ORDERS_KEY);
+    return data ? JSON.parse(data) : [];
+  },
+  savePurchaseOrders(orders: PurchaseOrder[]): void {
+    localStorage.setItem(PURCHASE_ORDERS_KEY, JSON.stringify(orders));
+  },
+  createPurchaseOrder(
+    productId: string,
+    productName: string,
+    productUnit: string,
+    branch: string,
+    quantity: number,
+    cost: number,
+    provider: string
+  ): PurchaseOrder {
+    const newOrder: PurchaseOrder = {
+      id: Date.now().toString(),
+      productId,
+      productName,
+      productUnit,
+      branch,
+      quantity,
+      cost,
+      provider,
+      date: new Date().toISOString().split("T")[0],
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    const orders = this.getPurchaseOrders();
+    orders.push(newOrder);
+    this.savePurchaseOrders(orders);
+    return newOrder;
+  },
 };
 ```
 
 ---
 
-### `src/styles/index.css`
-```css
-@import './fonts.css';
-@import './tailwind.css';
-@import './theme.css';
-```
-
-### `src/styles/tailwind.css`
-```css
-@import 'tailwindcss' source(none);
-@source '../**/*.{js,ts,jsx,tsx}';
-
-@import 'tw-animate-css';
-```
-
 ### `src/styles/theme.css`
+
 ```css
 @custom-variant dark (&:is(.dark *));
 
@@ -5086,6 +5690,7 @@ export const storage = {
     line-height: 1.5;
   }
 
+  /* Scrollbar personalizado */
   * {
     scrollbar-width: thin;
     scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
@@ -5121,6 +5726,7 @@ export const storage = {
     background-color: rgba(255, 255, 255, 0.4);
   }
 
+  /* Flechas de input number personalizadas */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     opacity: 1;
@@ -5139,24 +5745,65 @@ export const storage = {
 
 ---
 
-### Componentes UI (shadcn)
+### `src/README.md`
 
-Todos los componentes UI (`accordion.tsx`, `alert.tsx`, `alert-dialog.tsx`, etc.) son los estándar de shadcn/ui, sin modificaciones respecto al dump anterior. No se incluyen aquí para evitar redundancia, pero están presentes en el proyecto.
+```md
+# Source Code
 
----
+This folder contains all application source code.
 
-### `src/main.tsx`
-```tsx
-import { createRoot } from "react-dom/client";
-import App from "./app/App.tsx";
-import "./styles/index.css";
+## Structure
 
-createRoot(document.getElementById("root")!).render(<App />);
+```
+src/
+├── app/                      # Main application code
+│   ├── components/           # React components
+│   │   ├── ui/              # Reusable UI components (shadcn/ui)
+│   │   ├── figma/           # Figma-specific components
+│   │   ├── GlobalSearch.tsx # Global search component
+│   │   └── Layout.tsx       # Main layout component
+│   ├── hooks/               # Custom React hooks
+│   ├── pages/               # Page components
+│   │   ├── Dashboard.tsx    # Dashboard page
+│   │   ├── Inventory.tsx    # Inventory management page
+│   │   ├── Movements.tsx    # Stock movements page
+│   │   ├── Restock.tsx      # Restock alerts page
+│   │   ├── Purchases.tsx    # Purchase orders history (contador/admin)
+│   │   ├── Requests.tsx     # Stock requests between branches
+│   │   └── Offers.tsx       # Discounts management
+│   ├── types/               # TypeScript type definitions
+│   ├── utils/               # Utility functions
+│   ├── App.tsx              # Root application component
+│   └── routes.tsx           # Application routing
+└── styles/                  # Global styles and themes
+    ├── fonts.css            # Font imports
+    ├── index.css            # Main stylesheet
+    └── theme.css            # Theme variables and customizations
+```
+
+## Key Directories
+
+### `/app/components/ui`
+Reusable UI components from shadcn/ui. These are customizable components built on top of Radix UI primitives.
+
+### `/app/pages`
+Main page components for different sections of the application:
+- Dashboard: Overview and statistics
+- Inventory: Product management with unit of measure and price restrictions
+- Movements: Stock entry/exit tracking with sales and discounts
+- Restock: Low stock alerts with options to request from other branches or order from suppliers
+- Purchases: Purchase order history (admin/contador)
+- Requests: Inter-branch stock request management
+
+### `/app/hooks`
+Custom React hooks for shared functionality (e.g., theme management, undo/redo actions).
+
+### `/app/utils`
+Utility functions and helpers (e.g., localStorage management).
+
+### `/styles`
+Global styles, theme configurations, and font imports.
 ```
 
 ---
 
-### `package.json`, `vite.config.ts`, `postcss.config.mjs`, `index.html`
-Estos archivos se mantienen igual que en la versión anterior y no se incluyen nuevamente para no alargar el dump.
-
----
