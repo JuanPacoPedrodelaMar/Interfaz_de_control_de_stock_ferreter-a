@@ -1,4 +1,4 @@
-import { Product, Movement, User, Customer, Discount, StockRequest } from "../types";
+import { Product, Movement, User, Customer, Discount } from "../types";
 
 const PRODUCTS_KEY = "ferreteria_products";
 const MOVEMENTS_KEY = "ferreteria_movements";
@@ -6,7 +6,6 @@ const USERS_KEY = "ferreteria_users";
 const CUSTOMERS_KEY = "ferreteria_customers";
 const DISCOUNTS_KEY = "ferreteria_discounts";
 const SESSION_KEY = "ferreteria_session";
-const STOCK_REQUESTS_KEY = "ferreteria_stock_requests";
 
 // Umbral de compras para que un cliente sea considerado frecuente
 export const FREQUENT_CUSTOMER_THRESHOLD = 3;
@@ -51,14 +50,6 @@ const DEFAULT_USERS: User[] = [
     role: "contador",
     branch: "all",
     fullName: "Ana Martínez - Contador",
-  },
-  {
-    id: "u6",
-    username: "almacen",
-    password: "almacen123",
-    role: "warehouse",
-    branch: "Almacén Central",
-    fullName: "Roberto Sánchez - Almacén",
   },
 ];
 
@@ -204,55 +195,4 @@ export const storage = {
     localStorage.removeItem(SESSION_KEY);
   },
 
-  // Stock Requests
-  getStockRequests(): StockRequest[] {
-    const data = localStorage.getItem(STOCK_REQUESTS_KEY);
-    return data ? JSON.parse(data) : [];
-  },
-  saveStockRequests(requests: StockRequest[]): void {
-    localStorage.setItem(STOCK_REQUESTS_KEY, JSON.stringify(requests));
-  },
-  createStockRequest(
-    productId: string,
-    productName: string,
-    requestedBy: string,
-    requestedByName: string,
-    fromBranch: string,
-    toBranch: string,
-    quantity: number
-  ): StockRequest {
-    const requests = this.getStockRequests();
-    const newRequest: StockRequest = {
-      id: Date.now().toString(),
-      productId,
-      productName,
-      requestedBy,
-      requestedByName,
-      fromBranch,
-      toBranch,
-      quantity,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    requests.push(newRequest);
-    this.saveStockRequests(requests);
-    return newRequest;
-  },
-  updateStockRequest(
-    requestId: string,
-    status: "pending" | "approved" | "rejected",
-    resolvedBy?: string
-  ): void {
-    const requests = this.getStockRequests();
-    const index = requests.findIndex((r) => r.id === requestId);
-    if (index !== -1) {
-      requests[index] = {
-        ...requests[index],
-        status,
-        resolvedAt: new Date().toISOString(),
-        resolvedBy,
-      };
-      this.saveStockRequests(requests);
-    }
-  },
 };

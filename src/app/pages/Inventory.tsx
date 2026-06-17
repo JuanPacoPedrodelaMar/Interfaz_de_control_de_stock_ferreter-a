@@ -50,7 +50,6 @@ export function Inventory() {
   const { pushAction } = useUndo();
   const isEmployee = currentUser?.role === "employee";
   const isContador = currentUser?.role === "contador";
-  const isWarehouse = currentUser?.role === "warehouse";
   const userBranch = currentUser?.branch;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -99,14 +98,12 @@ export function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Los empleados y warehouse solo ven los productos de su sucursal
+  // Los empleados solo ven los productos de su sucursal
   // Contadores y admin ven todo
   const visibleProducts =
     isEmployee && userBranch
       ? products.filter((p) => p.branch === userBranch)
-      : isWarehouse && userBranch
-        ? products.filter((p) => p.branch === userBranch)
-        : products;
+      : products;
 
   const filteredProducts = visibleProducts.filter((product) => {
     const matchesSearch =
@@ -803,4 +800,3 @@ export function Inventory() {
     </div>
   );
 }
-

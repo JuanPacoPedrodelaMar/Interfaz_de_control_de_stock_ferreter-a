@@ -13,7 +13,6 @@ import {
   Building2,
   Undo2,
   Redo2,
-  Warehouse,
 } from "lucide-react";
 import { cn } from "./ui/utils";
 import { useTheme } from "../hooks/useTheme";
@@ -46,7 +45,6 @@ export function Layout() {
   const { currentUser, logout, isAdmin } = useAuth();
   const { canUndo, canRedo, undo, redo } = useUndo();
 
-  const isWarehouse = currentUser?.role === "warehouse";
   const isContador = currentUser?.role === "contador";
 
   const handleLogout = () => {
@@ -78,13 +76,9 @@ export function Layout() {
 
   const navigation = [
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
-    ...(isWarehouse
-      ? [{ name: "Gestión Almacén", path: "/warehouse", icon: Warehouse }]
-      : [
-          { name: "Inventario", path: "/inventory", icon: Package },
-          { name: "Movimientos", path: "/movements", icon: ArrowLeftRight },
-          { name: "A Reponer", path: "/restock", icon: AlertTriangle },
-        ]),
+    { name: "Inventario", path: "/inventory", icon: Package },
+    { name: "Movimientos", path: "/movements", icon: ArrowLeftRight },
+    { name: "A Reponer", path: "/restock", icon: AlertTriangle },
     ...(isAdmin || isContador
       ? [{ name: "Ofertas", path: "/offers", icon: Tag }]
       : []),
@@ -146,7 +140,7 @@ export function Layout() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {!isWarehouse && <GlobalSearch />}
+                <GlobalSearch />
 
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -199,9 +193,7 @@ export function Layout() {
                               ? "Administrador"
                               : currentUser?.role === "contador"
                                 ? "Contador"
-                                : currentUser?.role === "warehouse"
-                                  ? "Encargado Almacén"
-                                  : "Empleado"}
+                                : "Empleado"}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
