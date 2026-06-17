@@ -31,6 +31,8 @@ import {
   Building2,
   Copy,
   Lock,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -373,8 +375,55 @@ export function Inventory() {
     return acc;
   }, {} as Record<string, number>);
 
-  return (
-    <div className="space-y-6">
+  const [isPriceUpdateOpen, setIsPriceUpdateOpen] = useState(false);
+  const [priceUpdatePercent, setPriceUpdatePercent] = useState("");
+  const [priceUpdateDirection, setPriceUpdateDirection] = useState<"increase" | "decrease">("increase");
+
+  const canBulkUpdatePrices =
+    currentUser?.role === "admin" || currentUser?.role === "contador";
+
+  const handleBulkPriceUpdate = () => {
+    const pct = parseFloat(priceUpdatePercent);
+    if (isNaN(pct) || pct <= 0 || pct > 100) {
+      toast.error("Ingresa un porcentaje válido entre 0.1 y 100");
+      return;
+    }
+
+    const prevProducts = [...products];
+    const multiplier =
+      priceUpdateDirection === "increase" ? 1 + pct / 100 : 1 - pct / 100;
+
+    const updatedProducts = products.map((p) => ({
+      ...p,
+      price: Math.round(p.price * multiplier * 100) / 100,
+    }));
+
+    storage.saveProducts(updatedProducts);
+    setProducts(updatedProducts);
+
+    const dirLabel = priceUpdateDirection === "increase" ? "subidos" : "bajados";
+    toast.success(
+      `Precios ${dirLabel} un ${pct}% en ${updatedProducts.length} productos`
+    );
+
+    pushAction({
+      message: `Precios ${dirLabel} ${pct}% (${updatedProducts.length} productos)`,
+      undo: () => {
+        storage.saveProducts(prevProducts);
+        setProducts(prevProducts);
+        toast.info("Actualización de precios deshecha");
+      },
+      redo: () => {
+        storage.saveProducts(updatedProducts);
+        setProducts(updatedProducts);
+        toast.success("Actualización de precios rehecha");
+      },
+    });
+
+    setIsPriceUpdateOpen(false);
+    setPriceUpdatePercent("");
+    setPriceUpdateDirection("increase");
+  };
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-semibold text-foreground">Inventario</h2>
@@ -392,11 +441,114 @@ export function Inventory() {
             )}
           </p>
         </div>
-        <Button onClick={() => handleOpenDialog()}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Producto
-        </Button>
+        <div className="flex items-center gap-2">
+          {canBulkUpdatePrices && (
+            <Button variant="outline" onClick={() => setIsPriceUpdateOpen(true)}>
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Actualizar precios
+            </Button>
+          )}
+          <Button onClick={() => handleOpenDialog()}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Producto
+          </Button>
+        </div>
       </div>
+
+      {/* Dialog actualización masiva de precios */}
+      <Dialog open={isPriceUpdateOpen} onOpenChange={setIsPriceUpdateOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Actualizar precios</DialogTitle>
+            <DialogDescription>
+              Ajusta el precio de todos los productos en un porcentaje. La
+              acción puede deshacerse con Ctrl+Z.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Dirección</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPriceUpdateDirection("increase")}
+                  className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    priceUpdateDirection === "increase"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border hover:bg-accent"
+                  }`}
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  Subir precios
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPriceUpdateDirection("decrease")}
+                  className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    priceUpdateDirection === "decrease"
+                      ? "bg-destructive text-destructive-foreground border-destructive"
+                      : "border-border hover:bg-accent"
+                  }`}
+                >
+                  <TrendingDown className="h-4 w-4" />
+                  Bajar precios
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pricePercent">Porcentaje (%)</Label>
+              <div className="relative">
+                <Input
+                  id="pricePercent"
+                  type="number"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  value={priceUpdatePercent}
+                  onChange={(e) => setPriceUpdatePercent(e.target.value)}
+                  placeholder="Ej: 10"
+                  className="pr-8"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                  %
+                </span>
+              </div>
+            </div>
+            {priceUpdatePercent && parseFloat(priceUpdatePercent) > 0 && (
+              <div className="p-3 bg-muted/50 rounded-md text-sm text-muted-foreground">
+                Se{" "}
+                {priceUpdateDirection === "increase" ? "subirán" : "bajarán"}{" "}
+                los precios de{" "}
+                <span className="font-semibold text-foreground">
+                  {products.length} productos
+                </span>{" "}
+                un{" "}
+                <span className="font-semibold text-foreground">
+                  {priceUpdatePercent}%
+                </span>
+                .
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsPriceUpdateOpen(false);
+                setPriceUpdatePercent("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleBulkPriceUpdate}
+              variant={priceUpdateDirection === "decrease" ? "destructive" : "default"}
+            >
+              Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Filtros */}
       <Card>

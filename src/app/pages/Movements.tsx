@@ -92,7 +92,7 @@ export function Movements() {
     customerPhone: "",
     isFrequentCustomer: false,
     discountId: "",
-  });
+    isCash: false,
 
   const [formErrors, setFormErrors] = useState({
     productId: "",
@@ -123,6 +123,7 @@ export function Movements() {
       customerPhone: "",
       isFrequentCustomer: false,
       discountId: "",
+      isCash: false,
     });
     setFormErrors({
       productId: "",
@@ -140,6 +141,7 @@ export function Movements() {
   const isSale = formData.type === "exit" && formData.reason === "Venta";
   const activeDiscounts = discounts.filter((d) => d.isActive);
   const selectedDiscount = discounts.find((d) => d.id === formData.discountId);
+  const cashDiscount = discounts.find((d) => d.id === "d-cash" && d.isActive);
 
   // Cálculo de precios para venta
   const unitPrice = selectedProduct?.price || 0;
@@ -152,7 +154,17 @@ export function Movements() {
       discountAmount = selectedDiscount.value;
     }
   }
-  const finalUnitPrice = Math.max(0, unitPrice - discountAmount);
+  // Descuento adicional por pago en efectivo (se apila)
+  const priceAfterDiscount = Math.max(0, unitPrice - discountAmount);
+  let cashDiscountAmount = 0;
+  if (formData.isCash && cashDiscount && qty > 0) {
+    if (cashDiscount.type === "percentage") {
+      cashDiscountAmount = priceAfterDiscount * (cashDiscount.value / 100);
+    } else {
+      cashDiscountAmount = cashDiscount.value;
+    }
+  }
+  const finalUnitPrice = Math.max(0, priceAfterDiscount - cashDiscountAmount);
   const totalAmount = finalUnitPrice * qty;
 
   /**
@@ -295,6 +307,8 @@ export function Movements() {
         discountId: formData.discountId || undefined,
         discountName: selectedDiscount?.name,
         discountValue: selectedDiscount?.value,
+        isCash: formData.isCash,
+        cashDiscountValue: formData.isCash && cashDiscount ? cashDiscount.value : undefined,
         unitPrice,
         finalUnitPrice,
         totalAmount,
@@ -771,6 +785,18 @@ export function Movements() {
                           </div>
                         </div>
                       )}
+                      {movement.isCash && (
+                        <div className="flex items-center gap-2">
+                          <BadgePercent className="h-4 w-4 text-green-600 flex-shrink-0" />
+                          <div>
+                            <span className="text-muted-foreground">Pago: </span>
+                            <span className="font-medium text-green-600">
+                              Efectivo
+                              {movement.cashDiscountValue ? ` (−${movement.cashDiscountValue}%)` : ""}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       {movement.totalAmount !== undefined && (
                         <div className="flex items-center gap-2">
                           <Tag className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -1116,6 +1142,25 @@ export function Movements() {
                       </Label>
                     </div>
 
+                    {/* Pago en efectivo */}
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="isCash"
+                        checked={formData.isCash}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, isCash: !!checked })
+                        }
+                      />
+                      <Label htmlFor="isCash" className="cursor-pointer">
+                        Pago en efectivo
+                        {cashDiscount && (
+                          <span className="ml-1.5 text-xs text-green-600 font-medium">
+                            ({cashDiscount.value}% de descuento)
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+
                     {/* Descuento */}
                     {activeDiscounts.length > 0 && (
                       <div className="space-y-2">
@@ -1193,6 +1238,21 @@ export function Movements() {
                                   minimumFractionDigits: 2,
                                 })}
                               </span>
+                            </>
+                          )}
+                          {formData.isCash && cashDiscount && cashDiscountAmount > 0 && (
+                            <>
+                              <span>Efectivo ({cashDiscount.value}%):</span>
+                              <span className="text-right font-medium text-green-600">
+                                -$
+                                {cashDiscountAmount.toLocaleString("es-AR", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </>
+                          )}
+                          {(selectedDiscount || (formData.isCash && cashDiscount)) && (
+                            <>
                               <span>Precio final por unidad:</span>
                               <span className="text-right font-medium text-foreground">
                                 $

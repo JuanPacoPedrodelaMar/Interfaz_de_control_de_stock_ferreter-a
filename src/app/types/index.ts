@@ -61,6 +61,8 @@ export interface Movement {
   unitPrice?: number;
   finalUnitPrice?: number;
   totalAmount?: number;
+  isCash?: boolean;
+  cashDiscountValue?: number;
 }
 
 export const CATEGORIES = [

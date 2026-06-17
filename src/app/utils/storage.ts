@@ -72,6 +72,15 @@ const DEFAULT_DISCOUNTS: Discount[] = [
     appliesTo: "all",
     createdAt: new Date().toISOString(),
   },
+  {
+    id: "d-cash",
+    name: "Pago en efectivo (5%)",
+    type: "percentage",
+    value: 5,
+    isActive: true,
+    appliesTo: "all",
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 export const storage = {
@@ -177,7 +186,17 @@ export const storage = {
       localStorage.setItem(DISCOUNTS_KEY, JSON.stringify(DEFAULT_DISCOUNTS));
       return DEFAULT_DISCOUNTS;
     }
-    return JSON.parse(data);
+    const discounts: Discount[] = JSON.parse(data);
+    // Migración: asegurar que el descuento de efectivo existe
+    if (!discounts.find((d) => d.id === "d-cash")) {
+      const withCash = [
+        ...discounts,
+        DEFAULT_DISCOUNTS.find((d) => d.id === "d-cash")!,
+      ];
+      localStorage.setItem(DISCOUNTS_KEY, JSON.stringify(withCash));
+      return withCash;
+    }
+    return discounts;
   },
   saveDiscounts(discounts: Discount[]): void {
     localStorage.setItem(DISCOUNTS_KEY, JSON.stringify(discounts));

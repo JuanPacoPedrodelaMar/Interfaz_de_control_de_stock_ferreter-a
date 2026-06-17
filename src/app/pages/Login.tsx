@@ -43,6 +43,7 @@ export function Login() {
 
   const demoAccounts = [
     { label: "Administrador", username: "admin", password: "admin123", branch: "Todas las sucursales" },
+    { label: "Contador", username: "contador", password: "contador123", branch: "Todas las sucursales" },
     { label: "Empleado - Suc. Centro", username: "juanperez", password: "empleado123", branch: "Sucursal Centro" },
     { label: "Empleado - Suc. Norte", username: "mariagarcia", password: "empleado123", branch: "Sucursal Norte" },
     { label: "Empleado - Suc. Sur", username: "carloslopez", password: "empleado123", branch: "Sucursal Sur" },
